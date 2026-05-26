@@ -1,448 +1,57 @@
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f3f7fb;
-  color: #0b1f33;
-  overflow-x: hidden;
-}
-
-.appShell {
-  display: grid;
-  grid-template-columns: 260px 1fr;
+.loginPage {
   min-height: 100vh;
-}
-
-.sidebar {
   background: linear-gradient(180deg, #06213d, #073b63);
-  color: white;
-  padding: 24px 16px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
-}
-
-.brand {
   display: flex;
-  gap: 12px;
   align-items: center;
-  margin-bottom: 32px;
+  justify-content: center;
+  padding: 24px;
 }
 
-.logo {
-  font-size: 36px;
-}
-
-.brand h2 {
-  margin: 0;
-  font-size: 24px;
-}
-
-.brand p {
-  margin: 4px 0 0;
-  opacity: 0.8;
-}
-
-nav {
-  display: grid;
-  gap: 10px;
-}
-
-nav a {
-  padding: 14px 16px;
-  border-radius: 12px;
-  cursor: pointer;
-  color: white;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-nav a.active,
-nav a:hover {
-  background: #1457a8;
-}
-
-.daySummary {
-  margin-top: 40px;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.2);
-}
-
-.daySummary h3 {
-  margin-top: 0;
-}
-
-.daySummary p {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 10px 0;
-}
-
-.daySummary b {
-  color: white;
-}
-
-.negative {
-  color: #ef4444 !important;
-}
-
-.content {
+.loginCard {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 24px;
   padding: 28px;
-  overflow-x: hidden;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.25);
 }
 
-.topBar {
-  display: grid;
-  grid-template-columns: 1fr 360px;
-  gap: 18px;
-  align-items: end;
-  margin-bottom: 24px;
+.loginLogo {
+  font-size: 46px;
 }
 
-.topBar h1 {
-  margin: 0;
-  font-size: 42px;
-  line-height: 1.1;
-  color: #0b1f33;
+.loginCard h1 {
+  margin-bottom: 4px;
 }
 
-.topBar p {
-  margin: 8px 0 0;
+.loginCard p {
   color: #5f7285;
-  font-size: 18px;
 }
 
-.associationBox {
-  background: white;
-  border-radius: 18px;
-  padding: 18px;
-  box-shadow: 0 8px 24px rgba(11,31,51,0.08);
-}
-
-.associationBox label {
-  display: block;
-  font-weight: bold;
-  margin-bottom: 10px;
-  color: #0b1f33;
-}
-
-input,
-select,
-button {
+.loginError {
+  margin: 12px 0;
+  padding: 12px;
   border-radius: 12px;
-  border: 1px solid #d7e0ea;
-  padding: 12px;
-  font-size: 15px;
-}
-
-input,
-select {
-  width: 100%;
-  background: white;
-  color: #0b1f33;
-}
-
-button {
-  cursor: pointer;
-  font-weight: bold;
-}
-
-.metricGrid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 18px;
-  margin-bottom: 24px;
-}
-
-.metric {
-  background: white;
-  border-radius: 18px;
-  padding: 22px;
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  box-shadow: 0 8px 24px rgba(11,31,51,0.08);
-}
-
-.metric span {
-  font-size: 32px;
-}
-
-.metric small {
-  display: block;
-  color: #5f7285;
-  font-weight: bold;
-}
-
-.metric strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 24px;
-}
-
-.mainGrid {
-  display: grid;
-  grid-template-columns: 410px 1fr;
-  gap: 22px;
-}
-
-.panel {
-  background: white;
-  border-radius: 20px;
-  padding: 22px;
-  box-shadow: 0 8px 24px rgba(11,31,51,0.08);
-}
-
-.panel h2,
-.panel h3 {
-  margin-top: 0;
-  color: #0b1f33;
-}
-
-.tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: #eef3f8;
-  padding: 4px;
-  border-radius: 14px;
-  margin-bottom: 18px;
-}
-
-.tabs button {
-  border: none;
-  background: transparent;
-  color: #0b1f33;
-}
-
-.tabs .active {
-  background: #079455;
-  color: white;
-}
-
-label {
-  display: block;
-  margin: 14px 0 6px;
-  font-weight: bold;
-}
-
-.productBox {
-  margin: 18px 0;
-  padding: 18px;
-  border-radius: 18px;
-  background: #f1fff7;
-  border: 1px solid #b7e4ca;
-}
-
-.productBox small {
-  color: #079455;
-  font-weight: bold;
-}
-
-.productBox h3 {
-  margin: 10px 0;
-}
-
-.fieldGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.resultGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 18px 0;
-}
-
-.resultGrid div {
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid #d7e0ea;
-}
-
-.resultGrid strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 22px;
-}
-
-.saveBtn {
-  width: 100%;
-  background: #079455;
-  color: white;
-  border: none;
-}
-
-.miniActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.miniActions button {
-  background: #0f766e;
-  color: white;
-  border: none;
-}
-
-.smallPanel {
-  margin-top: 18px;
-}
-
-.smallPanel p {
-  color: #5f7285;
-}
-
-.panelHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
-
-.panelHeader button {
-  background: #079455;
-  color: white;
-  border: none;
-}
-
-.filters {
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.tableWrap {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-th {
-  background: #eaf2fb;
-  color: #0b1f33;
-  text-align: left;
-}
-
-th,
-td {
-  padding: 12px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.tableInput {
-  width: 110px;
-  background: white !important;
-  color: #0b1f33 !important;
-  border: 1px solid #cfd8e3 !important;
-}
-
-.badge,
-.low,
-.ok {
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: bold;
-}
-
-.Pescado {
-  background: #dff3ff;
-  color: #075985;
-}
-
-.Marisco {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.Filete {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.Congelado {
-  background: #cffafe;
-  color: #155e75;
-}
-
-.low {
   background: #fee2e2;
   color: #991b1b;
+  font-weight: bold;
 }
 
-.ok {
-  background: #bbf7d0;
-  color: #14532d;
+.loginHelp {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f3f7fb;
 }
 
-.movementsPanel {
-  margin-top: 22px;
+.loginHelp p {
+  margin: 4px 0;
 }
 
-.empty {
-  text-align: center;
-  padding: 30px;
-  color: #64748b;
-}
-
-@media (max-width: 1300px) {
-  .metricGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .mainGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 900px) {
-  .appShell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: relative;
-    height: auto;
-  }
-
-  .content {
-    padding: 18px;
-  }
-
-  .topBar {
-    grid-template-columns: 1fr;
-  }
-
-  .metricGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .fieldGrid,
-  .resultGrid,
-  .filters,
-  .miniActions {
-    grid-template-columns: 1fr;
-  }
-
-  .topBar h1 {
-    font-size: 34px;
-  }
+.logoutBtn {
+  width: 100%;
+  margin-top: 12px;
+  background: #ef4444;
+  color: white;
+  border: none;
 }

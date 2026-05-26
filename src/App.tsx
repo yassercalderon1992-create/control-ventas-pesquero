@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 type Product = {
@@ -19,6 +19,57 @@ type Movement = {
   salePriceLb: number;
   purchaseCostLb: number;
 };
+
+type User = {
+  username: string;
+  password: string;
+  role: "Administrador" | "Vendedor" | "Consulta";
+  associationId: string;
+  associationName: string;
+};
+
+const USERS: User[] = [
+  {
+    username: "admin",
+    password: "admin123",
+    role: "Administrador",
+    associationId: "central",
+    associationName: "Administración Central",
+  },
+  {
+    username: "elporvenir",
+    password: "1234",
+    role: "Vendedor",
+    associationId: "elporvenir",
+    associationName: "El Porvenir",
+  },
+  {
+    username: "pescadores",
+    password: "1234",
+    role: "Vendedor",
+    associationId: "pescadores",
+    associationName: "Asociación Los Pescadores",
+  },
+];
+
+const SESSION_KEY = "controlPesquero_currentUser";
+
+function getStorageKeys(associationId: string) {
+  return {
+    products: `controlPesquero_${associationId}_products`,
+    movements: `controlPesquero_${associationId}_movements`,
+    association: `controlPesquero_${associationId}_association`,
+  };
+}
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const initialProducts: Product[] = [
   { code: "001", name: "Yalatel", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
@@ -80,18 +131,61 @@ function money(value: number) {
   })}`;
 }
 
+function todayDate() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function addDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
 export default function App() {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [movements, setMovements] = useState<Movement[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(() =>
+    loadFromStorage<User | null>(SESSION_KEY, null)
+  );
+
+  const activeKeys = getStorageKeys(currentUser?.associationId || "guest");
+
+  const [products, setProducts] = useState<Product[]>(() =>
+    loadFromStorage(activeKeys.products, initialProducts)
+  );
+
+  const [movements, setMovements] = useState<Movement[]>(() =>
+    loadFromStorage(activeKeys.movements, [])
+  );
+
   const [mode, setMode] = useState<"Compra" | "Venta">("Venta");
 
-  const [association, setAssociation] = useState("El Porvenir");
+  const [association, setAssociation] = useState(() =>
+    loadFromStorage(activeKeys.association, currentUser?.associationName || "El Porvenir")
+  );
+
+  const [loginUser, setLoginUser] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+
+  const [movementDate, setMovementDate] = useState(todayDate());
+  const [reportStartDate, setReportStartDate] = useState(todayDate());
+  const [reportEndDate, setReportEndDate] = useState(todayDate());
+
   const [code, setCode] = useState("");
   const [qty, setQty] = useState("");
   const [salePriceLb, setSalePriceLb] = useState("");
   const [purchaseCostLb, setPurchaseCostLb] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todas");
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const keys = getStorageKeys(currentUser.associationId);
+    setProducts(loadFromStorage(keys.products, initialProducts));
+    setMovements(loadFromStorage(keys.movements, []));
+    setAssociation(loadFromStorage(keys.association, currentUser.associationName));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
+  }, [currentUser]);
 
   const selected = products.find((p) => p.code === code.trim());
 
@@ -102,29 +196,71 @@ export default function App() {
     });
   }, [products, search, category]);
 
-  const totalSales = movements
-    .filter((m) => m.type === "Venta")
-    .reduce((s, m) => s + m.qty * m.salePriceLb, 0);
+  const reportMovements = useMemo(() => {
+    return movements.filter((m) => m.date >= reportStartDate && m.date <= reportEndDate);
+  }, [movements, reportStartDate, reportEndDate]);
 
-  const totalPurchases = movements
-    .filter((m) => m.type === "Compra")
-    .reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
-
-  const soldLb = movements
-    .filter((m) => m.type === "Venta")
-    .reduce((s, m) => s + m.qty, 0);
-
-  const profit = movements
-    .filter((m) => m.type === "Venta")
-    .reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
-
+  const totalSales = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * m.salePriceLb, 0);
+  const totalPurchases = movements.filter((m) => m.type === "Compra").reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
+  const soldLb = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty, 0);
+  const profit = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
   const inventoryValue = products.reduce((s, p) => s + p.stock * p.purchaseCostLb, 0);
+
+  const reportSales = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * m.salePriceLb, 0);
+  const reportPurchases = reportMovements.filter((m) => m.type === "Compra").reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
+  const reportSoldLb = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty, 0);
+  const reportProfit = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const keys = getStorageKeys(currentUser.associationId);
+    localStorage.setItem(keys.products, JSON.stringify(products));
+  }, [products, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const keys = getStorageKeys(currentUser.associationId);
+    localStorage.setItem(keys.movements, JSON.stringify(movements));
+  }, [movements, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const keys = getStorageKeys(currentUser.associationId);
+    localStorage.setItem(keys.association, JSON.stringify(association));
+  }, [association, currentUser]);
+
+  function login() {
+    const found = USERS.find(
+      (u) =>
+        u.username.toLowerCase() === loginUser.trim().toLowerCase() &&
+        u.password === loginPassword
+    );
+
+    if (!found) {
+      setLoginError("Usuario o contraseña incorrectos.");
+      return;
+    }
+
+    setLoginError("");
+    setCurrentUser(found);
+    setLoginUser("");
+    setLoginPassword("");
+  }
+
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    setCurrentUser(null);
+    setProducts(initialProducts);
+    setMovements([]);
+    setAssociation("El Porvenir");
+  }
 
   function clearForm() {
     setCode("");
     setQty("");
     setSalePriceLb("");
     setPurchaseCostLb("");
+    setMovementDate(todayDate());
   }
 
   function saveMovement() {
@@ -135,13 +271,14 @@ export default function App() {
     const nPurchaseCostLb = Number(purchaseCostLb || selected.purchaseCostLb);
 
     if (nQty <= 0) return alert("Ingrese una cantidad válida.");
+    if (!movementDate) return alert("Seleccione una fecha.");
     if (mode === "Venta" && nSalePriceLb <= 0) return alert("Ingrese el precio de venta por libra.");
     if (mode === "Compra" && nPurchaseCostLb <= 0) return alert("Ingrese el costo de compra por libra.");
     if (mode === "Venta" && nQty > selected.stock) return alert("No hay stock suficiente.");
 
     const movement: Movement = {
       type: mode,
-      date: new Date().toISOString().slice(0, 10),
+      date: movementDate,
       code: selected.code,
       product: selected.name,
       qty: nQty,
@@ -154,7 +291,6 @@ export default function App() {
     setProducts(
       products.map((p) => {
         if (p.code !== selected.code) return p;
-
         return {
           ...p,
           stock: mode === "Compra" ? p.stock + nQty : p.stock - nQty,
@@ -193,7 +329,7 @@ export default function App() {
     setMovements([
       {
         type: "Inventario inicial",
-        date: new Date().toISOString().slice(0, 10),
+        date: movementDate || todayDate(),
         code: product.code,
         product: product.name,
         qty: stockValue,
@@ -224,6 +360,103 @@ export default function App() {
     ]);
   }
 
+  function setReportToday() {
+    setReportStartDate(todayDate());
+    setReportEndDate(todayDate());
+  }
+
+  function setReportWeek() {
+    setReportStartDate(addDays(-7));
+    setReportEndDate(todayDate());
+  }
+
+  function setReportMonth() {
+    const date = new Date();
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split("T")[0];
+    setReportStartDate(firstDay);
+    setReportEndDate(todayDate());
+  }
+
+  function exportReportCSV() {
+    const headers = [
+      "Asociacion",
+      "Usuario",
+      "Rol",
+      "Tipo",
+      "Fecha",
+      "Codigo",
+      "Articulo",
+      "Libras",
+      "Precio venta por libra",
+      "Costo compra por libra",
+      "Total",
+      "Utilidad",
+    ];
+
+    const rows = reportMovements.map((m) => {
+      const total = m.type === "Venta" ? m.qty * m.salePriceLb : m.qty * m.purchaseCostLb;
+      const utility = m.type === "Venta" ? m.qty * (m.salePriceLb - m.purchaseCostLb) : 0;
+
+      return [
+        association,
+        currentUser?.username || "",
+        currentUser?.role || "",
+        m.type,
+        m.date,
+        m.code,
+        m.product,
+        m.qty,
+        m.salePriceLb,
+        m.purchaseCostLb,
+        total,
+        utility,
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `reporte_${association}_${reportStartDate}_a_${reportEndDate}.csv`;
+    link.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+  if (!currentUser) {
+    return (
+      <main className="loginPage">
+        <section className="loginCard">
+          <div className="loginLogo">🐟</div>
+          <h1>Control de ventas</h1>
+          <p>Sistema pesquero comunitario</p>
+
+          <label>Usuario</label>
+          <input value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="Ej. elporvenir" />
+
+          <label>Contraseña</label>
+          <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Contraseña" />
+
+          {loginError && <div className="loginError">{loginError}</div>}
+
+          <button className="saveBtn" onClick={login}>Ingresar</button>
+
+          <div className="loginHelp">
+            <b>Usuarios de prueba:</b>
+            <p>admin / admin123</p>
+            <p>elporvenir / 1234</p>
+            <p>pescadores / 1234</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="appShell">
       <aside className="sidebar">
@@ -231,7 +464,7 @@ export default function App() {
           <div className="logo">🐟</div>
           <div>
             <h2>Control de ventas</h2>
-            <p>Sistema contable e inventario</p>
+            <p>{currentUser.associationName}</p>
           </div>
         </div>
 
@@ -244,7 +477,14 @@ export default function App() {
         </nav>
 
         <div className="daySummary">
-          <h3>Resumen del día</h3>
+          <h3>Usuario</h3>
+          <p>Cuenta <b>{currentUser.username}</b></p>
+          <p>Rol <b>{currentUser.role}</b></p>
+          <button className="logoutBtn" onClick={logout}>Cerrar sesión</button>
+        </div>
+
+        <div className="daySummary">
+          <h3>Resumen general</h3>
           <p>Ventas <b>{money(totalSales)}</b></p>
           <p>Compras <b>{money(totalPurchases)}</b></p>
           <p>Libras vendidas <b>{soldLb.toLocaleString("es-HN")} lb</b></p>
@@ -288,6 +528,9 @@ export default function App() {
                 <button className={mode === "Compra" ? "active" : ""} onClick={() => setMode("Compra")}>Compra</button>
               </div>
 
+              <label>Fecha del movimiento</label>
+              <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
+
               <label>Código del artículo</label>
               <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ej. 010" />
 
@@ -321,20 +564,11 @@ export default function App() {
               <div className="resultGrid">
                 <div>
                   <small>Total ingreso / compra</small>
-                  <strong>
-                    {money(
-                      Number(qty || 0) *
-                        (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0))
-                    )}
-                  </strong>
+                  <strong>{money(Number(qty || 0) * (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0)))}</strong>
                 </div>
                 <div>
                   <small>Utilidad estimada</small>
-                  <strong>
-                    {mode === "Venta"
-                      ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0)))
-                      : money(0)}
-                  </strong>
+                  <strong>{mode === "Venta" ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0))) : money(0)}</strong>
                 </div>
               </div>
 
@@ -354,7 +588,7 @@ export default function App() {
           <div className="panel inventoryPanel" id="inventario">
             <div className="panelHeader">
               <h2>Inventario actual</h2>
-              <button>Exportar</button>
+              <button onClick={exportReportCSV}>Exportar</button>
             </div>
 
             <div className="filters">
@@ -389,28 +623,10 @@ export default function App() {
                       <td>{p.name}</td>
                       <td><span className={`badge ${p.category}`}>{p.category}</span></td>
                       <td>{p.unit}</td>
-                      <td>
-                        <input
-                          className="tableInput"
-                          type="number"
-                          value={p.stock}
-                          onChange={(e) => updateProduct(p.code, "stock", e.target.value)}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="tableInput"
-                          type="number"
-                          value={p.purchaseCostLb}
-                          onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)}
-                        />
-                      </td>
+                      <td><input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} /></td>
+                      <td><input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} /></td>
                       <td>{money(p.stock * p.purchaseCostLb)}</td>
-                      <td>
-                        <span className={p.stock <= 2 ? "low" : "ok"}>
-                          {p.stock <= 2 ? "Bajo" : "Disponible"}
-                        </span>
-                      </td>
+                      <td><span className={p.stock <= 2 ? "low" : "ok"}>{p.stock <= 2 ? "Bajo" : "Disponible"}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -420,7 +636,36 @@ export default function App() {
         </section>
 
         <section className="panel movementsPanel" id="reportes">
-          <h2>Últimos movimientos</h2>
+          <div className="panelHeader">
+            <h2>Reportes por fecha</h2>
+            <button onClick={exportReportCSV}>Exportar Excel / CSV</button>
+          </div>
+
+          <div className="reportFilters">
+            <div>
+              <label>Fecha inicio</label>
+              <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} />
+            </div>
+
+            <div>
+              <label>Fecha fin</label>
+              <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} />
+            </div>
+
+            <div className="reportActions">
+              <button onClick={setReportToday}>Hoy</button>
+              <button onClick={setReportWeek}>Últimos 7 días</button>
+              <button onClick={setReportMonth}>Este mes</button>
+            </div>
+          </div>
+
+          <section className="metricGrid reportMetricGrid">
+            <div className="metric"><span>🛒</span><div><small>Ventas período</small><strong>{money(reportSales)}</strong></div></div>
+            <div className="metric"><span>🧾</span><div><small>Compras período</small><strong>{money(reportPurchases)}</strong></div></div>
+            <div className="metric"><span>⚖️</span><div><small>Libras vendidas</small><strong>{reportSoldLb.toLocaleString("es-HN")} lb</strong></div></div>
+            <div className="metric"><span>📊</span><div><small>Utilidad período</small><strong>{money(reportProfit)}</strong></div></div>
+          </section>
+
           <div className="tableWrap">
             <table>
               <thead>
@@ -436,12 +681,12 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {movements.length === 0 ? (
+                {reportMovements.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty">Aún no hay movimientos registrados.</td>
+                    <td colSpan={8} className="empty">No hay movimientos en el período seleccionado.</td>
                   </tr>
                 ) : (
-                  movements.map((m, i) => (
+                  reportMovements.map((m, i) => (
                     <tr key={i}>
                       <td>{m.type}</td>
                       <td>{m.date}</td>
@@ -449,16 +694,8 @@ export default function App() {
                       <td>{m.qty.toLocaleString("es-HN")} lb</td>
                       <td>{m.type === "Venta" ? `${money(m.salePriceLb)} / lb` : "-"}</td>
                       <td>{money(m.purchaseCostLb)} / lb</td>
-                      <td>
-                        {m.type === "Venta"
-                          ? money(m.qty * m.salePriceLb)
-                          : money(m.qty * m.purchaseCostLb)}
-                      </td>
-                      <td>
-                        {m.type === "Venta"
-                          ? money(m.qty * (m.salePriceLb - m.purchaseCostLb))
-                          : "-"}
-                      </td>
+                      <td>{m.type === "Venta" ? money(m.qty * m.salePriceLb) : money(m.qty * m.purchaseCostLb)}</td>
+                      <td>{m.type === "Venta" ? money(m.qty * (m.salePriceLb - m.purchaseCostLb)) : "-"}</td>
                     </tr>
                   ))
                 )}
