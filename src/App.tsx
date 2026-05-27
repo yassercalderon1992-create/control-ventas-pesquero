@@ -1,6 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  doc,
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+
+import { auth, db } from "./firebase";
+
 type Product = {
   code: string;
   name: string;
@@ -11,6 +30,7 @@ type Product = {
 };
 
 type Movement = {
+  id?: string;
   type: "Compra" | "Venta" | "Inventario inicial";
   date: string;
   code: string;
@@ -18,58 +38,43 @@ type Movement = {
   qty: number;
   salePriceLb: number;
   purchaseCostLb: number;
+  associationId: string;
+  associationName: string;
+  userEmail: string;
 };
 
-type User = {
-  username: string;
-  password: string;
+type UserProfile = {
+  email: string;
   role: "Administrador" | "Vendedor" | "Consulta";
   associationId: string;
   associationName: string;
 };
 
-const USERS: User[] = [
-  {
-    username: "admin",
-    password: "admin123",
+const ASSOCIATIONS = [
+  { id: "elporvenir", name: "El Porvenir" },
+  { id: "pescadores", name: "Asociación Los Pescadores" },
+];
+
+const USER_PROFILES: Record<string, UserProfile> = {
+  "admin@pesca.com": {
+    email: "admin@pesca.com",
     role: "Administrador",
-    associationId: "central",
-    associationName: "Administración Central",
+    associationId: "todas",
+    associationName: "Todas las asociaciones",
   },
-  {
-    username: "elporvenir",
-    password: "1234",
+  "elporvenir@pesca.com": {
+    email: "elporvenir@pesca.com",
     role: "Vendedor",
     associationId: "elporvenir",
     associationName: "El Porvenir",
   },
-  {
-    username: "pescadores",
-    password: "1234",
+  "pescadores@pesca.com": {
+    email: "pescadores@pesca.com",
     role: "Vendedor",
     associationId: "pescadores",
     associationName: "Asociación Los Pescadores",
   },
-];
-
-const SESSION_KEY = "controlPesquero_currentUser";
-
-function getStorageKeys(associationId: string) {
-  return {
-    products: `controlPesquero_${associationId}_products`,
-    movements: `controlPesquero_${associationId}_movements`,
-    association: `controlPesquero_${associationId}_association`,
-  };
-}
-
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
-  } catch {
-    return fallback;
-  }
-}
+};
 
 const initialProducts: Product[] = [
   { code: "001", name: "Yalatel", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
@@ -102,26 +107,6 @@ const initialProducts: Product[] = [
   { code: "028", name: "Calamar", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
   { code: "029", name: "Mixto de mariscos", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
   { code: "030", name: "Pescado seco salado", category: "Congelado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "031", name: "Mojarra", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "032", name: "Mojarra roja", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "033", name: "Mojarra negra", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "034", name: "Bagre", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "035", name: "Bacalao", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "036", name: "Dorado", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "037", name: "Pez vela", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "038", name: "Marlín", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "039", name: "Pez espada", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "040", name: "Cazón", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "041", name: "Chillo", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "042", name: "Sábalo", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "043", name: "Burrito", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "044", name: "Guabina", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "045", name: "Vieira", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "046", name: "Ostión", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "047", name: "Almeja", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "048", name: "Concha negra", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "049", name: "Pepino de mar", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
-  { code: "050", name: "Medusa", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
 ];
 
 function money(value: number) {
@@ -141,31 +126,25 @@ function addDays(days: number) {
   return date.toISOString().split("T")[0];
 }
 
+function getAssociationName(id: string) {
+  return ASSOCIATIONS.find((a) => a.id === id)?.name || id;
+}
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() =>
-    loadFromStorage<User | null>(SESSION_KEY, null)
-  );
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
-  const activeKeys = getStorageKeys(currentUser?.associationId || "guest");
+  const [selectedAssociationId, setSelectedAssociationId] = useState("elporvenir");
+  const [association, setAssociation] = useState("El Porvenir");
 
-  const [products, setProducts] = useState<Product[]>(() =>
-    loadFromStorage(activeKeys.products, initialProducts)
-  );
-
-  const [movements, setMovements] = useState<Movement[]>(() =>
-    loadFromStorage(activeKeys.movements, [])
-  );
-
-  const [mode, setMode] = useState<"Compra" | "Venta">("Venta");
-
-  const [association, setAssociation] = useState(() =>
-    loadFromStorage(activeKeys.association, currentUser?.associationName || "El Porvenir")
-  );
+  const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
 
   const [loginUser, setLoginUser] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
+  const [mode, setMode] = useState<"Compra" | "Venta">("Venta");
   const [movementDate, setMovementDate] = useState(todayDate());
   const [reportStartDate, setReportStartDate] = useState(todayDate());
   const [reportEndDate, setReportEndDate] = useState(todayDate());
@@ -177,17 +156,104 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todas");
 
+  const isAdmin = currentUser?.role === "Administrador";
+  const selected = products.find((p) => p.code === code);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user?.email) {
+        setCurrentUser(null);
+        setLoadingUser(false);
+        return;
+      }
+
+      const profile =
+        USER_PROFILES[user.email] ||
+        {
+          email: user.email,
+          role: "Vendedor",
+          associationId: user.email.split("@")[0],
+          associationName: user.email.split("@")[0],
+        };
+
+      setCurrentUser(profile);
+
+      if (profile.role === "Administrador") {
+        setSelectedAssociationId("todas");
+        setAssociation("Todas las asociaciones");
+      } else {
+        setSelectedAssociationId(profile.associationId);
+        setAssociation(profile.associationName);
+      }
+
+      setLoadingUser(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
 
-    const keys = getStorageKeys(currentUser.associationId);
-    setProducts(loadFromStorage(keys.products, initialProducts));
-    setMovements(loadFromStorage(keys.movements, []));
-    setAssociation(loadFromStorage(keys.association, currentUser.associationName));
-    localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
-  }, [currentUser]);
+    if (selectedAssociationId === "todas") {
+      setProducts([]);
+      return;
+    }
 
-  const selected = products.find((p) => p.code === code.trim());
+    const ref = collection(db, "associations", selectedAssociationId, "products");
+
+    async function seedProducts() {
+      const snap = await getDocs(ref);
+      if (snap.empty) {
+        await Promise.all(
+          initialProducts.map((p) =>
+            setDoc(doc(db, "associations", selectedAssociationId, "products", p.code), p)
+          )
+        );
+      }
+    }
+
+    seedProducts();
+
+    const unsubscribe = onSnapshot(ref, (snapshot) => {
+      const data = snapshot.docs.map((d) => d.data() as Product);
+      setProducts(data.sort((a, b) => a.code.localeCompare(b.code)));
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedAssociationId]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (isAdmin && selectedAssociationId === "todas") {
+      const ref = collectionGroup(db, "movements");
+
+      const unsubscribe = onSnapshot(ref, (snapshot) => {
+        const data = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Movement),
+        }));
+
+        setMovements(data.sort((a, b) => b.date.localeCompare(a.date)));
+      });
+
+      return () => unsubscribe();
+    }
+
+    const ref = collection(db, "associations", selectedAssociationId, "movements");
+
+    const unsubscribe = onSnapshot(ref, (snapshot) => {
+      const data = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Movement),
+      }));
+
+      setMovements(data.sort((a, b) => b.date.localeCompare(a.date)));
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedAssociationId, isAdmin]);
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
@@ -214,65 +280,37 @@ export default function App() {
   const productPerformance = useMemo(() => {
     const map = new Map<string, { product: string; qty: number; profit: number }>();
 
-    movements
-      .filter((m) => m.type === "Venta")
-      .forEach((m) => {
-        const current = map.get(m.code) || { product: m.product, qty: 0, profit: 0 };
-        current.qty += m.qty;
-        current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
-        map.set(m.code, current);
-      });
+    movements.filter((m) => m.type === "Venta").forEach((m) => {
+      const current = map.get(m.code) || { product: m.product, qty: 0, profit: 0 };
+      current.qty += m.qty;
+      current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
+      map.set(m.code, current);
+    });
 
     const data = Array.from(map.values());
 
-    const mostSold = [...data].sort((a, b) => b.qty - a.qty)[0];
-    const mostProfitable = [...data].sort((a, b) => b.profit - a.profit)[0];
-
-    return { mostSold, mostProfitable };
+    return {
+      mostSold: [...data].sort((a, b) => b.qty - a.qty)[0],
+      mostProfitable: [...data].sort((a, b) => b.profit - a.profit)[0],
+    };
   }, [movements]);
 
-  useEffect(() => {
-    if (!currentUser) return;
-    const keys = getStorageKeys(currentUser.associationId);
-    localStorage.setItem(keys.products, JSON.stringify(products));
-  }, [products, currentUser]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const keys = getStorageKeys(currentUser.associationId);
-    localStorage.setItem(keys.movements, JSON.stringify(movements));
-  }, [movements, currentUser]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const keys = getStorageKeys(currentUser.associationId);
-    localStorage.setItem(keys.association, JSON.stringify(association));
-  }, [association, currentUser]);
-
-  function login() {
-    const found = USERS.find(
-      (u) =>
-        u.username.toLowerCase() === loginUser.trim().toLowerCase() &&
-        u.password === loginPassword
-    );
-
-    if (!found) {
+  async function login() {
+    try {
+      setLoginError("");
+      await signInWithEmailAndPassword(auth, loginUser, loginPassword);
+      setLoginUser("");
+      setLoginPassword("");
+    } catch {
       setLoginError("Usuario o contraseña incorrectos.");
-      return;
     }
-
-    setLoginError("");
-    setCurrentUser(found);
-    setLoginUser("");
-    setLoginPassword("");
   }
 
-  function logout() {
-    localStorage.removeItem(SESSION_KEY);
+  async function logout() {
+    await signOut(auth);
     setCurrentUser(null);
-    setProducts(initialProducts);
+    setProducts([]);
     setMovements([]);
-    setAssociation("El Porvenir");
   }
 
   function clearForm() {
@@ -283,7 +321,8 @@ export default function App() {
     setMovementDate(todayDate());
   }
 
-  function saveMovement() {
+  async function saveMovement() {
+    if (selectedAssociationId === "todas") return alert("Seleccione una asociación específica.");
     if (!selected) return alert("Seleccione un producto válido.");
 
     const nQty = Number(qty);
@@ -296,6 +335,9 @@ export default function App() {
     if (mode === "Compra" && nPurchaseCostLb <= 0) return alert("Ingrese el costo de compra por libra.");
     if (mode === "Venta" && nQty > selected.stock) return alert("No hay stock suficiente.");
 
+    const associationName = getAssociationName(selectedAssociationId);
+    const newStock = mode === "Compra" ? selected.stock + nQty : selected.stock - nQty;
+
     const movement: Movement = {
       type: mode,
       date: movementDate,
@@ -304,46 +346,64 @@ export default function App() {
       qty: nQty,
       salePriceLb: mode === "Venta" ? nSalePriceLb : 0,
       purchaseCostLb: nPurchaseCostLb,
+      associationId: selectedAssociationId,
+      associationName,
+      userEmail: currentUser?.email || "",
     };
 
-    setMovements([movement, ...movements]);
+    await addDoc(collection(db, "associations", selectedAssociationId, "movements"), {
+      ...movement,
+      createdAt: serverTimestamp(),
+    });
 
-    setProducts(
-      products.map((p) => {
-        if (p.code !== selected.code) return p;
-        return {
-          ...p,
-          stock: mode === "Compra" ? p.stock + nQty : p.stock - nQty,
-          purchaseCostLb: mode === "Compra" && nPurchaseCostLb > 0 ? nPurchaseCostLb : p.purchaseCostLb,
-        };
-      })
+    await setDoc(
+      doc(db, "associations", selectedAssociationId, "products", selected.code),
+      {
+        ...selected,
+        stock: newStock,
+        purchaseCostLb: mode === "Compra" ? nPurchaseCostLb : selected.purchaseCostLb,
+      },
+      { merge: true }
     );
 
     clearForm();
   }
 
-  function updateProduct(code: string, field: "stock" | "purchaseCostLb", value: string) {
-    setProducts(products.map((p) => (p.code === code ? { ...p, [field]: Number(value || 0) } : p)));
+  async function updateProduct(productCode: string, field: "stock" | "purchaseCostLb", value: string) {
+    if (selectedAssociationId === "todas") return;
+
+    const product = products.find((p) => p.code === productCode);
+    if (!product) return;
+
+    await setDoc(
+      doc(db, "associations", selectedAssociationId, "products", productCode),
+      {
+        ...product,
+        [field]: Number(value || 0),
+      },
+      { merge: true }
+    );
   }
 
-  function addProduct() {
+  async function addProduct() {
+    if (selectedAssociationId === "todas") return alert("Seleccione una asociación específica.");
+
     const name = prompt("Nombre del nuevo producto:");
     if (!name) return;
 
     const productCategory = prompt("Categoría: Pescado, Marisco, Filete o Congelado") || "Pescado";
-    const code = String(products.length + 1).padStart(3, "0");
+    const newCode = String(products.length + 1).padStart(3, "0");
 
-    setProducts([
-      ...products,
-      {
-        code,
-        name,
-        category: productCategory,
-        unit: "Libra",
-        stock: 0,
-        purchaseCostLb: 0,
-      },
-    ]);
+    const product: Product = {
+      code: newCode,
+      name,
+      category: productCategory,
+      unit: "Libra",
+      stock: 0,
+      purchaseCostLb: 0,
+    };
+
+    await setDoc(doc(db, "associations", selectedAssociationId, "products", newCode), product);
   }
 
   function setReportToday() {
@@ -367,7 +427,6 @@ export default function App() {
     const headers = [
       "Asociacion",
       "Usuario",
-      "Rol",
       "Tipo",
       "Fecha",
       "Codigo",
@@ -384,9 +443,8 @@ export default function App() {
       const utility = m.type === "Venta" ? m.qty * (m.salePriceLb - m.purchaseCostLb) : 0;
 
       return [
-        association,
-        currentUser?.username || "",
-        currentUser?.role || "",
+        m.associationName || association,
+        m.userEmail || "",
         m.type,
         m.date,
         m.code,
@@ -414,6 +472,10 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  if (loadingUser) {
+    return <main className="loginPage"><section className="loginCard"><h1>Cargando...</h1></section></main>;
+  }
+
   if (!currentUser) {
     return (
       <main className="loginPage">
@@ -422,8 +484,8 @@ export default function App() {
           <h1>Control de ventas</h1>
           <p>Sistema pesquero comunitario</p>
 
-          <label>Usuario</label>
-          <input value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="Ej. elporvenir" />
+          <label>Correo</label>
+          <input value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="admin@pesca.com" />
 
           <label>Contraseña</label>
           <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Contraseña" />
@@ -433,10 +495,10 @@ export default function App() {
           <button className="saveBtn" onClick={login}>Ingresar</button>
 
           <div className="loginHelp">
-            <b>Usuarios de prueba:</b>
-            <p>admin / admin123</p>
-            <p>elporvenir / 1234</p>
-            <p>pescadores / 1234</p>
+            <b>Usuarios:</b>
+            <p>admin@pesca.com / admin123</p>
+            <p>elporvenir@pesca.com / 123456</p>
+            <p>pescadores@pesca.com / 123456</p>
           </div>
         </section>
       </main>
@@ -450,7 +512,7 @@ export default function App() {
           <div className="logo">🐟</div>
           <div>
             <h2>Control de ventas</h2>
-            <p>{currentUser.associationName}</p>
+            <p>{association}</p>
           </div>
         </div>
 
@@ -464,7 +526,7 @@ export default function App() {
 
         <div className="daySummary">
           <h3>Usuario</h3>
-          <p>Cuenta <b>{currentUser.username}</b></p>
+          <p>Cuenta <b>{currentUser.email}</b></p>
           <p>Rol <b>{currentUser.role}</b></p>
           <button className="logoutBtn" onClick={logout}>Cerrar sesión</button>
         </div>
@@ -487,12 +549,25 @@ export default function App() {
           </div>
 
           <div className="associationBox">
-            <label>Asociación actual</label>
-            <input
-              value={association}
-              onChange={(e) => setAssociation(e.target.value)}
-              placeholder="Escriba el nombre de la asociación"
-            />
+            <label>{isAdmin ? "Vista administrador" : "Asociación actual"}</label>
+
+            {isAdmin ? (
+              <select
+                value={selectedAssociationId}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedAssociationId(value);
+                  setAssociation(value === "todas" ? "Todas las asociaciones" : getAssociationName(value));
+                }}
+              >
+                <option value="todas">Todas las asociaciones</option>
+                {ASSOCIATIONS.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            ) : (
+              <input value={association} disabled />
+            )}
           </div>
         </header>
 
@@ -500,7 +575,7 @@ export default function App() {
           <div className="metric"><span>🛒</span><div><small>Ventas</small><strong>{money(totalSales)}</strong></div></div>
           <div className="metric"><span>🧾</span><div><small>Compras</small><strong>{money(totalPurchases)}</strong></div></div>
           <div className="metric"><span>⚖️</span><div><small>Libras vendidas</small><strong>{soldLb.toLocaleString("es-HN")} lb</strong></div></div>
-          <div className="metric"><span>📊</span><div><small>Utilidad</small><strong className={profit < 0 ? "negative" : ""}>{money(profit)}</strong></div></div>
+          <div className="metric"><span>📊</span><div><small>Utilidad</small><strong>{money(profit)}</strong></div></div>
           <div className="metric"><span>📦</span><div><small>Inventario</small><strong>{money(inventoryValue)}</strong></div></div>
         </section>
 
@@ -536,57 +611,47 @@ export default function App() {
 
               <div className="movementFormGrid">
                 <div>
-                  <label>Fecha del movimiento</label>
+                  <label>Fecha</label>
                   <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
                 </div>
 
                 <div>
                   <label>Artículo</label>
                   <select value={code} onChange={(e) => setCode(e.target.value)}>
-                    <option value="">Seleccione un producto</option>
+                    <option value="">Seleccione producto</option>
                     {products.map((p) => (
-                      <option key={p.code} value={p.code}>
-                        {p.code} - {p.name}
-                      </option>
+                      <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
                     ))}
                   </select>
                 </div>
 
                 <div>
                   <label>Cantidad en libras</label>
-                  <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0" />
+                  <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
                 </div>
 
-                {mode === "Venta" ? (
-                  <div>
-                    <label>Precio por libra</label>
-                    <input type="number" value={salePriceLb} onChange={(e) => setSalePriceLb(e.target.value)} placeholder="0.00" />
-                  </div>
-                ) : (
-                  <div>
-                    <label>Costo compra por libra</label>
-                    <input type="number" value={purchaseCostLb} onChange={(e) => setPurchaseCostLb(e.target.value)} placeholder="0.00" />
-                  </div>
-                )}
+                <div>
+                  <label>{mode === "Venta" ? "Precio por libra" : "Costo compra por libra"}</label>
+                  <input
+                    type="number"
+                    value={mode === "Venta" ? salePriceLb : purchaseCostLb}
+                    onChange={(e) =>
+                      mode === "Venta" ? setSalePriceLb(e.target.value) : setPurchaseCostLb(e.target.value)
+                    }
+                  />
+                </div>
               </div>
 
               <div className="productBox">
                 <small>Producto detectado</small>
-                <h3>{selected ? selected.name : "Seleccione un producto"}</h3>
-                <p>Categoría: {selected?.category || "-"} | Unidad: {selected?.unit || "-"}</p>
+                <h3>{selected?.name || "Seleccione un producto"}</h3>
                 <p>Stock disponible: {selected?.stock || 0} lb</p>
-                <p>Costo de compra: {money(selected?.purchaseCostLb || 0)} / lb</p>
+                <p>Costo compra: {money(selected?.purchaseCostLb || 0)} / lb</p>
               </div>
 
               <div className="resultGrid">
-                <div>
-                  <small>Total ingreso / compra</small>
-                  <strong>{money(Number(qty || 0) * (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0)))}</strong>
-                </div>
-                <div>
-                  <small>Utilidad estimada</small>
-                  <strong>{mode === "Venta" ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0))) : money(0)}</strong>
-                </div>
+                <div><small>Total</small><strong>{money(Number(qty || 0) * (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0)))}</strong></div>
+                <div><small>Utilidad estimada</small><strong>{mode === "Venta" ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0))) : money(0)}</strong></div>
               </div>
 
               <button className="saveBtn" onClick={saveMovement}>Guardar movimiento</button>
@@ -607,51 +672,57 @@ export default function App() {
               <button onClick={exportReportCSV}>Exportar</button>
             </div>
 
-            <div className="filters">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar producto o código..." />
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                <option>Todas</option>
-                <option>Pescado</option>
-                <option>Marisco</option>
-                <option>Filete</option>
-                <option>Congelado</option>
-              </select>
-            </div>
+            {selectedAssociationId === "todas" ? (
+              <p className="empty">Seleccione una asociación específica para ver inventario.</p>
+            ) : (
+              <>
+                <div className="filters">
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar producto o código..." />
+                  <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                    <option>Todas</option>
+                    <option>Pescado</option>
+                    <option>Marisco</option>
+                    <option>Filete</option>
+                    <option>Congelado</option>
+                  </select>
+                </div>
 
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Código</th>
-                    <th>Artículo</th>
-                    <th>Categoría</th>
-                    <th>Unidad</th>
-                    <th>Stock disponible</th>
-                    <th>Costo compra / lb</th>
-                    <th>Valor inventario</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((p) => (
-                    <tr key={p.code}>
-                      <td>{p.code}</td>
-                      <td>{p.name}</td>
-                      <td><span className={`badge ${p.category}`}>{p.category}</span></td>
-                      <td>{p.unit}</td>
-                      <td><input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} /></td>
-                      <td><input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} /></td>
-                      <td>{money(p.stock * p.purchaseCostLb)}</td>
-                      <td>
-                        <span className={p.stock === 0 ? "emptyStock" : p.stock < 5 ? "low" : "ok"}>
-                          {p.stock === 0 ? "Inexistente" : p.stock < 5 ? "Bajo" : "Disponible"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Artículo</th>
+                        <th>Categoría</th>
+                        <th>Unidad</th>
+                        <th>Stock disponible</th>
+                        <th>Costo compra / lb</th>
+                        <th>Valor inventario</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((p) => (
+                        <tr key={p.code}>
+                          <td>{p.code}</td>
+                          <td>{p.name}</td>
+                          <td><span className={`badge ${p.category}`}>{p.category}</span></td>
+                          <td>{p.unit}</td>
+                          <td><input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} /></td>
+                          <td><input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} /></td>
+                          <td>{money(p.stock * p.purchaseCostLb)}</td>
+                          <td>
+                            <span className={p.stock === 0 ? "emptyStock" : p.stock < 5 ? "low" : "ok"}>
+                              {p.stock === 0 ? "Inexistente" : p.stock < 5 ? "Bajo" : "Disponible"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -690,30 +761,26 @@ export default function App() {
             <table>
               <thead>
                 <tr>
+                  <th>Asociación</th>
                   <th>Tipo</th>
                   <th>Fecha</th>
                   <th>Artículo</th>
                   <th>Libras</th>
-                  <th>Precio venta / lb</th>
-                  <th>Costo compra / lb</th>
                   <th>Total</th>
                   <th>Utilidad</th>
                 </tr>
               </thead>
               <tbody>
                 {reportMovements.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty">No hay movimientos en el período seleccionado.</td>
-                  </tr>
+                  <tr><td colSpan={7} className="empty">No hay movimientos en el período seleccionado.</td></tr>
                 ) : (
-                  reportMovements.map((m, i) => (
-                    <tr key={i}>
+                  reportMovements.map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.associationName}</td>
                       <td>{m.type}</td>
                       <td>{m.date}</td>
                       <td>{m.product}</td>
-                      <td>{m.qty.toLocaleString("es-HN")} lb</td>
-                      <td>{m.type === "Venta" ? `${money(m.salePriceLb)} / lb` : "-"}</td>
-                      <td>{money(m.purchaseCostLb)} / lb</td>
+                      <td>{m.qty} lb</td>
                       <td>{m.type === "Venta" ? money(m.qty * m.salePriceLb) : money(m.qty * m.purchaseCostLb)}</td>
                       <td>{m.type === "Venta" ? money(m.qty * (m.salePriceLb - m.purchaseCostLb)) : "-"}</td>
                     </tr>
