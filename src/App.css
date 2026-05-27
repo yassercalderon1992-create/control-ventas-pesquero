@@ -198,6 +198,18 @@ label {
   font-weight: 800;
 }
 
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #64748b 50%),
+    linear-gradient(135deg, #64748b 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 3px),
+    calc(100% - 12px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
 /* =========================================================
    7. MÉTRICAS DASHBOARD
 ========================================================= */
@@ -246,12 +258,63 @@ label {
 }
 
 /* =========================================================
-   8. GRID PRINCIPAL
+   8. INSIGHTS / ANALÍTICAS
+========================================================= */
+
+.insightGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.insightCard {
+  background: white;
+  border-radius: 22px;
+  padding: 22px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e2e8f0;
+}
+
+.insightCard span {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: #eff6ff;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+}
+
+.insightCard small {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.insightCard strong {
+  display: block;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+.insightCard p {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 14px;
+}
+
+/* =========================================================
+   9. GRID PRINCIPAL
 ========================================================= */
 
 .mainGrid {
   display: grid;
-  grid-template-columns: 430px 1fr;
+  grid-template-columns: 1fr;
   gap: 22px;
 }
 
@@ -269,8 +332,12 @@ label {
 }
 
 /* =========================================================
-   9. NUEVO MOVIMIENTO
+   10. NUEVO MOVIMIENTO
 ========================================================= */
+
+.movementPanel {
+  width: 100%;
+}
 
 .tabs {
   display: grid;
@@ -292,8 +359,16 @@ label {
   color: white;
 }
 
+.movementFormGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
 .productBox {
-  margin: 18px 0;
+  margin: 22px 0 18px;
   padding: 18px;
   border-radius: 18px;
   background: #f0fdf4;
@@ -320,7 +395,7 @@ label {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin: 18px 0;
+  margin: 20px 0 18px;
 }
 
 .resultGrid div {
@@ -339,9 +414,12 @@ label {
 
 .saveBtn {
   width: 100%;
+  height: 52px;
   background: #2563eb;
   color: white;
   border: none;
+  margin-top: 10px;
+  font-size: 16px;
 }
 
 .smallPanel {
@@ -364,8 +442,12 @@ label {
   border: none;
 }
 
+.oneButton {
+  grid-template-columns: 1fr !important;
+}
+
 /* =========================================================
-   10. INVENTARIO
+   11. INVENTARIO
 ========================================================= */
 
 .panelHeader {
@@ -421,12 +503,13 @@ td {
 }
 
 /* =========================================================
-   11. BADGES
+   12. BADGES / ESTADOS
 ========================================================= */
 
 .badge,
 .low,
-.ok {
+.ok,
+.emptyStock {
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12px;
@@ -463,8 +546,13 @@ td {
   color: #166534;
 }
 
+.emptyStock {
+  background: #e5e7eb;
+  color: #374151;
+}
+
 /* =========================================================
-   12. REPORTES
+   13. REPORTES
 ========================================================= */
 
 .movementsPanel {
@@ -507,7 +595,7 @@ td {
 }
 
 /* =========================================================
-   13. LOGIN
+   14. LOGIN
 ========================================================= */
 
 .loginPage {
@@ -561,7 +649,7 @@ td {
 }
 
 /* =========================================================
-   14. RESPONSIVE
+   15. RESPONSIVE
 ========================================================= */
 
 @media (max-width: 1300px) {
@@ -569,12 +657,16 @@ td {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .mainGrid {
-    grid-template-columns: 1fr;
-  }
-
   .reportMetricGrid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .movementFormGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .insightGrid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -606,12 +698,24 @@ td {
   .resultGrid,
   .filters,
   .reportFilters,
-  .miniActions {
+  .miniActions,
+  .movementFormGrid {
     grid-template-columns: 1fr;
   }
 
   .panelHeader {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .insightCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .insightCard span {
+    width: 60px;
+    height: 60px;
+    font-size: 28px;
   }
 }

@@ -211,6 +211,26 @@ export default function App() {
   const reportSoldLb = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty, 0);
   const reportProfit = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
 
+  const productPerformance = useMemo(() => {
+    const map = new Map<string, { product: string; qty: number; profit: number }>();
+
+    movements
+      .filter((m) => m.type === "Venta")
+      .forEach((m) => {
+        const current = map.get(m.code) || { product: m.product, qty: 0, profit: 0 };
+        current.qty += m.qty;
+        current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
+        map.set(m.code, current);
+      });
+
+    const data = Array.from(map.values());
+
+    const mostSold = [...data].sort((a, b) => b.qty - a.qty)[0];
+    const mostProfitable = [...data].sort((a, b) => b.profit - a.profit)[0];
+
+    return { mostSold, mostProfitable };
+  }, [movements]);
+
   useEffect(() => {
     if (!currentUser) return;
     const keys = getStorageKeys(currentUser.associationId);
@@ -264,7 +284,7 @@ export default function App() {
   }
 
   function saveMovement() {
-    if (!selected) return alert("Ingrese un código válido.");
+    if (!selected) return alert("Seleccione un producto válido.");
 
     const nQty = Number(qty);
     const nSalePriceLb = Number(salePriceLb);
@@ -304,40 +324,6 @@ export default function App() {
 
   function updateProduct(code: string, field: "stock" | "purchaseCostLb", value: string) {
     setProducts(products.map((p) => (p.code === code ? { ...p, [field]: Number(value || 0) } : p)));
-  }
-
-  function addInitialInventory() {
-    const productCode = prompt("Ingrese el código del producto:");
-    if (!productCode) return;
-
-    const product = products.find((p) => p.code === productCode.trim());
-    if (!product) return alert("Código no encontrado.");
-
-    const stockValue = Number(prompt("Ingrese la cantidad en libras:") || 0);
-    const costValue = Number(prompt("Ingrese el costo de compra por libra:") || 0);
-
-    if (stockValue <= 0) return alert("Cantidad no válida.");
-
-    setProducts(
-      products.map((p) =>
-        p.code === product.code
-          ? { ...p, stock: p.stock + stockValue, purchaseCostLb: costValue || p.purchaseCostLb }
-          : p
-      )
-    );
-
-    setMovements([
-      {
-        type: "Inventario inicial",
-        date: movementDate || todayDate(),
-        code: product.code,
-        product: product.name,
-        qty: stockValue,
-        salePriceLb: 0,
-        purchaseCostLb: costValue || product.purchaseCostLb,
-      },
-      ...movements,
-    ]);
   }
 
   function addProduct() {
@@ -518,6 +504,26 @@ export default function App() {
           <div className="metric"><span>📦</span><div><small>Inventario</small><strong>{money(inventoryValue)}</strong></div></div>
         </section>
 
+        <section className="insightGrid">
+          <div className="insightCard">
+            <span>🏆</span>
+            <div>
+              <small>Producto más vendido</small>
+              <strong>{productPerformance.mostSold?.product || "Sin ventas"}</strong>
+              <p>{productPerformance.mostSold?.qty || 0} lb vendidas</p>
+            </div>
+          </div>
+
+          <div className="insightCard">
+            <span>💰</span>
+            <div>
+              <small>Mayor margen de utilidad</small>
+              <strong>{productPerformance.mostProfitable?.product || "Sin ventas"}</strong>
+              <p>{money(productPerformance.mostProfitable?.profit || 0)}</p>
+            </div>
+          </div>
+        </section>
+
         <section className="mainGrid">
           <div id="movimiento">
             <div className="panel movementPanel">
@@ -528,21 +534,24 @@ export default function App() {
                 <button className={mode === "Compra" ? "active" : ""} onClick={() => setMode("Compra")}>Compra</button>
               </div>
 
-              <label>Fecha del movimiento</label>
-              <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
+              <div className="movementFormGrid">
+                <div>
+                  <label>Fecha del movimiento</label>
+                  <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
+                </div>
 
-              <label>Código del artículo</label>
-              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ej. 010" />
+                <div>
+                  <label>Artículo</label>
+                  <select value={code} onChange={(e) => setCode(e.target.value)}>
+                    <option value="">Seleccione un producto</option>
+                    {products.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.code} - {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="productBox">
-                <small>Producto detectado</small>
-                <h3>{selected ? selected.name : "Ingrese código válido"}</h3>
-                <p>Categoría: {selected?.category || "-"} | Unidad: {selected?.unit || "-"}</p>
-                <p>Stock disponible: {selected?.stock || 0} lb</p>
-                <p>Costo de compra: {money(selected?.purchaseCostLb || 0)} / lb</p>
-              </div>
-
-              <div className="fieldGrid twoColumns">
                 <div>
                   <label>Cantidad en libras</label>
                   <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0" />
@@ -555,10 +564,18 @@ export default function App() {
                   </div>
                 ) : (
                   <div>
-                    <label>Costo de compra por libra</label>
+                    <label>Costo compra por libra</label>
                     <input type="number" value={purchaseCostLb} onChange={(e) => setPurchaseCostLb(e.target.value)} placeholder="0.00" />
                   </div>
                 )}
+              </div>
+
+              <div className="productBox">
+                <small>Producto detectado</small>
+                <h3>{selected ? selected.name : "Seleccione un producto"}</h3>
+                <p>Categoría: {selected?.category || "-"} | Unidad: {selected?.unit || "-"}</p>
+                <p>Stock disponible: {selected?.stock || 0} lb</p>
+                <p>Costo de compra: {money(selected?.purchaseCostLb || 0)} / lb</p>
               </div>
 
               <div className="resultGrid">
@@ -577,9 +594,8 @@ export default function App() {
 
             <div className="panel smallPanel">
               <h3>Inventario y productos</h3>
-              <p>Agregue stock inicial o registre nuevos productos.</p>
-              <div className="miniActions">
-                <button onClick={addInitialInventory}>+ Agregar inventario</button>
+              <p>Registre nuevos productos cuando sea necesario.</p>
+              <div className="miniActions oneButton">
                 <button onClick={addProduct}>+ Nuevo producto</button>
               </div>
             </div>
@@ -626,7 +642,11 @@ export default function App() {
                       <td><input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} /></td>
                       <td><input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} /></td>
                       <td>{money(p.stock * p.purchaseCostLb)}</td>
-                      <td><span className={p.stock <= 2 ? "low" : "ok"}>{p.stock <= 2 ? "Bajo" : "Disponible"}</span></td>
+                      <td>
+                        <span className={p.stock === 0 ? "emptyStock" : p.stock < 5 ? "low" : "ok"}>
+                          {p.stock === 0 ? "Inexistente" : p.stock < 5 ? "Bajo" : "Disponible"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
