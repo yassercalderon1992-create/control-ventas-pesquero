@@ -107,6 +107,26 @@ const initialProducts: Product[] = [
   { code: "028", name: "Calamar", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
   { code: "029", name: "Mixto de mariscos", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
   { code: "030", name: "Pescado seco salado", category: "Congelado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "031", name: "Mojarra", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "032", name: "Mojarra roja", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "033", name: "Mojarra negra", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "034", name: "Bagre", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "035", name: "Bacalao", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "036", name: "Dorado", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "037", name: "Pez vela", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "038", name: "Marlín", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "039", name: "Pez espada", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "040", name: "Cazón", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "041", name: "Chillo", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "042", name: "Sábalo", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "043", name: "Burrito", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "044", name: "Guabina", category: "Pescado", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "045", name: "Vieira", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "046", name: "Ostión", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "047", name: "Almeja", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "048", name: "Concha negra", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "049", name: "Pepino de mar", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
+  { code: "050", name: "Medusa", category: "Marisco", unit: "Libra", stock: 0, purchaseCostLb: 0 },
 ];
 
 function money(value: number) {
@@ -134,8 +154,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  const [selectedAssociationId, setSelectedAssociationId] = useState("elporvenir");
-  const [association, setAssociation] = useState("El Porvenir");
+  const [selectedAssociationId, setSelectedAssociationId] = useState("pescadores");
+  const [association, setAssociation] = useState("Asociación Los Pescadores");
 
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -168,12 +188,11 @@ export default function App() {
       }
 
       const profile =
-        USER_PROFILES[user.email] ||
-        {
+        USER_PROFILES[user.email] || {
           email: user.email,
           role: "Vendedor",
-          associationId: user.email.split("@")[0],
-          associationName: user.email.split("@")[0],
+          associationId: "pescadores",
+          associationName: "Asociación Los Pescadores",
         };
 
       setCurrentUser(profile);
@@ -204,6 +223,7 @@ export default function App() {
 
     async function seedProducts() {
       const snap = await getDocs(ref);
+
       if (snap.empty) {
         await Promise.all(
           initialProducts.map((p) =>
@@ -266,26 +286,51 @@ export default function App() {
     return movements.filter((m) => m.date >= reportStartDate && m.date <= reportEndDate);
   }, [movements, reportStartDate, reportEndDate]);
 
-  const totalSales = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * m.salePriceLb, 0);
-  const totalPurchases = movements.filter((m) => m.type === "Compra").reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
-  const soldLb = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty, 0);
-  const profit = movements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
+  const totalSales = movements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty * m.salePriceLb, 0);
+
+  const totalPurchases = movements
+    .filter((m) => m.type === "Compra")
+    .reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
+
+  const soldLb = movements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty, 0);
+
+  const profit = movements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
+
   const inventoryValue = products.reduce((s, p) => s + p.stock * p.purchaseCostLb, 0);
 
-  const reportSales = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * m.salePriceLb, 0);
-  const reportPurchases = reportMovements.filter((m) => m.type === "Compra").reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
-  const reportSoldLb = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty, 0);
-  const reportProfit = reportMovements.filter((m) => m.type === "Venta").reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
+  const reportSales = reportMovements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty * m.salePriceLb, 0);
+
+  const reportPurchases = reportMovements
+    .filter((m) => m.type === "Compra")
+    .reduce((s, m) => s + m.qty * m.purchaseCostLb, 0);
+
+  const reportSoldLb = reportMovements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty, 0);
+
+  const reportProfit = reportMovements
+    .filter((m) => m.type === "Venta")
+    .reduce((s, m) => s + m.qty * (m.salePriceLb - m.purchaseCostLb), 0);
 
   const productPerformance = useMemo(() => {
     const map = new Map<string, { product: string; qty: number; profit: number }>();
 
-    movements.filter((m) => m.type === "Venta").forEach((m) => {
-      const current = map.get(m.code) || { product: m.product, qty: 0, profit: 0 };
-      current.qty += m.qty;
-      current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
-      map.set(m.code, current);
-    });
+    movements
+      .filter((m) => m.type === "Venta")
+      .forEach((m) => {
+        const current = map.get(m.code) || { product: m.product, qty: 0, profit: 0 };
+        current.qty += m.qty;
+        current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
+        map.set(m.code, current);
+      });
 
     const data = Array.from(map.values());
 
@@ -302,7 +347,7 @@ export default function App() {
       setLoginUser("");
       setLoginPassword("");
     } catch {
-      setLoginError("Usuario o contraseña incorrectos.");
+      setLoginError("Correo o contraseña incorrectos.");
     }
   }
 
@@ -473,7 +518,13 @@ export default function App() {
   }
 
   if (loadingUser) {
-    return <main className="loginPage"><section className="loginCard"><h1>Cargando...</h1></section></main>;
+    return (
+      <main className="loginPage">
+        <section className="loginCard">
+          <h1>Cargando...</h1>
+        </section>
+      </main>
+    );
   }
 
   if (!currentUser) {
@@ -485,20 +536,29 @@ export default function App() {
           <p>Sistema pesquero comunitario</p>
 
           <label>Correo</label>
-          <input value={loginUser} onChange={(e) => setLoginUser(e.target.value)} placeholder="admin@pesca.com" />
+          <input
+            value={loginUser}
+            onChange={(e) => setLoginUser(e.target.value)}
+            placeholder="pescadores@pesca.com"
+          />
 
           <label>Contraseña</label>
-          <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Contraseña" />
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            placeholder="Contraseña"
+          />
 
           {loginError && <div className="loginError">{loginError}</div>}
 
-          <button className="saveBtn" onClick={login}>Ingresar</button>
+          <button className="saveBtn" onClick={login}>
+            Ingresar
+          </button>
 
           <div className="loginHelp">
-            <b>Usuarios:</b>
-            <p>admin@pesca.com / admin123</p>
-            <p>elporvenir@pesca.com / 123456</p>
-            <p>pescadores@pesca.com / 123456</p>
+            <b>Usuario disponible:</b>
+            <p>pescadores@pesca.com</p>
           </div>
         </section>
       </main>
@@ -650,8 +710,14 @@ export default function App() {
               </div>
 
               <div className="resultGrid">
-                <div><small>Total</small><strong>{money(Number(qty || 0) * (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0)))}</strong></div>
-                <div><small>Utilidad estimada</small><strong>{mode === "Venta" ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0))) : money(0)}</strong></div>
+                <div>
+                  <small>Total</small>
+                  <strong>{money(Number(qty || 0) * (mode === "Venta" ? Number(salePriceLb || 0) : Number(purchaseCostLb || 0)))}</strong>
+                </div>
+                <div>
+                  <small>Utilidad estimada</small>
+                  <strong>{mode === "Venta" ? money(Number(qty || 0) * (Number(salePriceLb || 0) - Number(selected?.purchaseCostLb || 0))) : money(0)}</strong>
+                </div>
               </div>
 
               <button className="saveBtn" onClick={saveMovement}>Guardar movimiento</button>
@@ -708,8 +774,12 @@ export default function App() {
                           <td>{p.name}</td>
                           <td><span className={`badge ${p.category}`}>{p.category}</span></td>
                           <td>{p.unit}</td>
-                          <td><input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} /></td>
-                          <td><input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} /></td>
+                          <td>
+                            <input className="tableInput" type="number" value={p.stock} onChange={(e) => updateProduct(p.code, "stock", e.target.value)} />
+                          </td>
+                          <td>
+                            <input className="tableInput" type="number" value={p.purchaseCostLb} onChange={(e) => updateProduct(p.code, "purchaseCostLb", e.target.value)} />
+                          </td>
                           <td>{money(p.stock * p.purchaseCostLb)}</td>
                           <td>
                             <span className={p.stock === 0 ? "emptyStock" : p.stock < 5 ? "low" : "ok"}>
@@ -772,7 +842,9 @@ export default function App() {
               </thead>
               <tbody>
                 {reportMovements.length === 0 ? (
-                  <tr><td colSpan={7} className="empty">No hay movimientos en el período seleccionado.</td></tr>
+                  <tr>
+                    <td colSpan={7} className="empty">No hay movimientos en el período seleccionado.</td>
+                  </tr>
                 ) : (
                   reportMovements.map((m) => (
                     <tr key={m.id}>
