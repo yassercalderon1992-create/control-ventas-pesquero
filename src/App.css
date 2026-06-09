@@ -719,3 +719,403 @@ td {
     font-size: 28px;
   }
 }
+
+/* =========================================================
+   16. PANEL ADMINISTRADOR GOAL V2.0
+========================================================= */
+.adminPanel {
+  margin-top: 24px;
+}
+
+.adminHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.adminHeader h2 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.adminFilters {
+  display: grid;
+  grid-template-columns: 250px 250px 250px;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.adminMetrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.adminMetric {
+  background: white;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 10px 25px rgba(15,23,42,.08);
+  border-left: 5px solid #2563eb;
+}
+
+.adminMetric small {
+  display: block;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.adminMetric strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+/* =========================================================
+   GRAFICAS
+========================================================= */
+
+.chartCard {
+  background: white;
+  border-radius: 22px;
+  padding: 20px;
+  box-shadow: 0 10px 28px rgba(15,23,42,.08);
+}
+
+.chartCard h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.barChart {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.barItem {
+  display: grid;
+  grid-template-columns: 180px 1fr 80px;
+  gap: 10px;
+  align-items: center;
+}
+
+.barLabel {
+  font-weight: 700;
+}
+
+.barTrack {
+  height: 28px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: linear-gradient(90deg,#2563eb,#0ea5e9);
+  border-radius: 999px;
+}
+
+.barValue {
+  text-align: right;
+  font-weight: 700;
+}
+
+/* =========================================================
+   TABLERO CONSOLIDADO
+========================================================= */
+
+.adminGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.adminTable th {
+  background: #eff6ff;
+}
+
+.adminTable th,
+.adminTable td {
+  padding: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.adminTable tr:hover {
+  background: #f8fafc;
+}
+
+/* =========================================================
+   INVENTARIO CONSOLIDADO
+========================================================= */
+
+.inventoryValueHigh {
+  color: #166534;
+  font-weight: 900;
+}
+
+.inventoryValueMedium {
+  color: #ca8a04;
+  font-weight: 900;
+}
+
+.inventoryValueLow {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+/* =========================================================
+   DASHBOARD DONANTES
+========================================================= */
+
+.donorDashboard {
+  margin-top: 25px;
+}
+
+.donorCards {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 15px;
+}
+
+.donorCard {
+  background: white;
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(15,23,42,.08);
+}
+
+.donorCard h4 {
+  margin: 0;
+  color: #64748b;
+}
+
+.donorCard strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+/* =========================================================
+   CAJA DIARIA
+========================================================= */
+
+.cashSummary {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 15px;
+}
+
+.cashCard {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(15,23,42,.08);
+}
+
+.cashCard.ingreso {
+  border-left: 6px solid #16a34a;
+}
+
+.cashCard.egreso {
+  border-left: 6px solid #dc2626;
+}
+
+.cashCard.saldo {
+  border-left: 6px solid #2563eb;
+}
+
+/* =========================================================
+   COMPRAS A PESCADORES
+========================================================= */
+
+.fisherTable {
+  width: 100%;
+}
+
+.fisherTable th {
+  background: #dcfce7;
+}
+
+.fisherTable td,
+.fisherTable th {
+  padding: 12px;
+}
+
+/* =========================================================
+   RESPONSIVE ADMIN
+========================================================= */
+
+@media(max-width:1400px){
+
+  .adminMetrics{
+      grid-template-columns:repeat(3,1fr);
+  }
+
+  .donorCards{
+      grid-template-columns:repeat(2,1fr);
+  }
+
+}
+
+@media(max-width:1000px){
+
+  .adminGrid{
+      grid-template-columns:1fr;
+  }
+
+  .adminMetrics{
+      grid-template-columns:repeat(2,1fr);
+  }
+
+  .cashSummary{
+      grid-template-columns:repeat(2,1fr);
+  }
+
+}
+
+@media(max-width:768px){
+
+  .adminFilters{
+      grid-template-columns:1fr;
+  }
+
+  .adminMetrics{
+      grid-template-columns:1fr;
+  }
+
+  .cashSummary{
+      grid-template-columns:1fr;
+  }
+
+  .donorCards{
+      grid-template-columns:1fr;
+  }
+
+  .barItem{
+      grid-template-columns:1fr;
+  }
+
+}
+/* =========================================================
+   17. AJUSTES PARA APP FIRESTORE DINÁMICO
+========================================================= */
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin: 24px 0;
+}
+
+.barList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 180px 1fr 100px;
+  gap: 12px;
+  align-items: center;
+}
+
+.barLabel {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.barTrack {
+  height: 26px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+  border-radius: 999px;
+}
+
+.barValue {
+  text-align: right;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.adminPanel p {
+  color: #64748b;
+  margin-top: 4px;
+}
+
+@media (max-width: 1000px) {
+  .chartGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .barRow {
+    grid-template-columns: 1fr;
+  }
+
+  .barValue {
+    text-align: left;
+  }
+}
+/* =========================================================
+   18. CENTRO DE INTELIGENCIA / VISTA EJECUTIVA ADMIN
+========================================================= */
+
+.executiveShell .content {
+  padding-top: 34px;
+}
+
+.executiveSidebar .brand h2 {
+  font-size: 22px;
+}
+
+.executiveTopBar h1 {
+  font-size: 44px;
+}
+
+.executiveMetricGrid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.executiveInsightGrid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.executiveContent .panel {
+  margin-bottom: 24px;
+}
+
+.executiveContent .chartGrid {
+  margin-bottom: 24px;
+}
+
+.executiveContent .panelHeader p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.executiveContent table td:first-child,
+.executiveContent table th:first-child {
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .executiveTopBar h1 {
+    font-size: 34px;
+  }
+}
