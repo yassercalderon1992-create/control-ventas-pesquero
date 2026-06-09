@@ -33,11 +33,6 @@ type Product = {
   lastSalePriceLb?: number;
 };
 
-type Supplier = {
-  name: string;
-  community: string;
-};
-
 type Expense = {
   id?: string;
   date: string;
@@ -213,7 +208,7 @@ export default function App() {
   const [movements, setMovements] = useState<Movement[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [cashEntries, setCashEntries] = useState<CashEntry[]>([]);
+  const [, setCashEntries] = useState<CashEntry[]>([]);
 
   const [loginUser, setLoginUser] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
