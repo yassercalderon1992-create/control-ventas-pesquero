@@ -240,6 +240,20 @@ export default function App() {
     return associations.find((a) => a.id === id)?.name || id;
   }
 
+  function displayAssociationName(associationId?: string, fallbackName?: string) {
+    const fromCatalog = associations.find((a) => a.id === associationId)?.name;
+    const raw = fromCatalog || fallbackName || associationId || "Sin asociación";
+
+    const normalized = raw.trim().toLowerCase();
+    const foundByName = associations.find((a) => a.name.trim().toLowerCase() === normalized);
+    if (foundByName) return foundByName.name;
+
+    if (normalized === "elporvenir") return "El Porvenir";
+    if (normalized === "pescadores") return "Asociación Los Pescadores";
+
+    return raw;
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user?.email) {
@@ -490,44 +504,146 @@ export default function App() {
   const netProfitAfterExpenses = reportProfit - reportExpenses;
 
   const adminSummary = useMemo(() => {
-    const byAssociation = new Map<string, { sales: number; purchases: number; profit: number; soldLb: number; inventory: number }>();
-    const byProduct = new Map<string, { sales: number; profit: number; soldLb: number }>();
+    type AssociationSummary = {
+      sales: number;
+      purchases: number;
+      profit: number;
+      soldLb: number;
+      inventory: number;
+    };
+
+    type ProductSummary = {
+      sales: number;
+      purchases: number;
+      profit: number;
+      soldLb: number;
+      boughtLb: number;
+      saleTotal: number;
+      purchaseTotal: number;
+      saleCount: number;
+      purchaseCount: number;
+      inventory: number;
+    };
+
+    const byAssociation = new Map<string, AssociationSummary>();
+    const byProduct = new Map<string, ProductSummary>();
     const visibleProducts = selectedAssociationId === "todas"
       ? allProducts
       : allProducts.filter((p) => p.associationId === selectedAssociationId);
 
+    function getAssociationRow(label: string) {
+      const current = byAssociation.get(label) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0 };
+      byAssociation.set(label, current);
+      return current;
+    }
+
+    function getProductRow(label: string) {
+      const current = byProduct.get(label) || {
+        sales: 0,
+        purchases: 0,
+        profit: 0,
+        soldLb: 0,
+        boughtLb: 0,
+        saleTotal: 0,
+        purchaseTotal: 0,
+        saleCount: 0,
+        purchaseCount: 0,
+        inventory: 0,
+      };
+      byProduct.set(label, current);
+      return current;
+    }
+
     movements.forEach((m) => {
-      const key = m.associationName || getAssociationName(m.associationId);
-      const current = byAssociation.get(key) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0 };
+      const associationLabel = displayAssociationName(m.associationId, m.associationName);
+      const associationRow = getAssociationRow(associationLabel);
+      const productRow = getProductRow(m.product);
 
       if (m.type === "Venta") {
-        current.sales += m.qty * m.salePriceLb;
-        current.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
-        current.soldLb += m.qty;
+        const saleAmount = m.qty * m.salePriceLb;
+        const movementProfit = m.qty * (m.salePriceLb - m.purchaseCostLb);
 
-        const prod = byProduct.get(m.product) || { sales: 0, profit: 0, soldLb: 0 };
-        prod.sales += m.qty * m.salePriceLb;
-        prod.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
-        prod.soldLb += m.qty;
-        byProduct.set(m.product, prod);
+        associationRow.sales += saleAmount;
+        associationRow.profit += movementProfit;
+        associationRow.soldLb += m.qty;
+
+        productRow.sales += saleAmount;
+        productRow.profit += movementProfit;
+        productRow.soldLb += m.qty;
+        productRow.saleTotal += saleAmount;
+        productRow.saleCount += m.qty;
       }
 
-      if (m.type === "Compra") current.purchases += m.qty * m.purchaseCostLb;
-      byAssociation.set(key, current);
+      if (m.type === "Compra") {
+        const purchaseAmount = m.qty * m.purchaseCostLb;
+
+        associationRow.purchases += purchaseAmount;
+
+        productRow.purchases += purchaseAmount;
+        productRow.boughtLb += m.qty;
+        productRow.purchaseTotal += purchaseAmount;
+        productRow.purchaseCount += m.qty;
+      }
     });
 
     visibleProducts.forEach((p) => {
-      const key = p.associationName || getAssociationName(p.associationId || "");
-      const current = byAssociation.get(key) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0 };
-      current.inventory += p.stock * p.purchaseCostLb;
-      byAssociation.set(key, current);
+      const associationLabel = displayAssociationName(p.associationId, p.associationName);
+      const associationRow = getAssociationRow(associationLabel);
+      const productRow = getProductRow(p.name);
+      const inventoryAmount = p.stock * p.purchaseCostLb;
+
+      associationRow.inventory += inventoryAmount;
+      productRow.inventory += inventoryAmount;
     });
 
+    const associationRows = Array.from(byAssociation.entries())
+      .map(([label, value]) => ({
+        label,
+        sales: value.sales,
+        purchases: value.purchases,
+        profit: value.profit,
+        soldLb: value.soldLb,
+        inventory: value.inventory,
+        balance: value.sales - value.purchases,
+        margin: value.sales > 0 ? (value.profit / value.sales) * 100 : 0,
+      }))
+      .sort((a, b) => b.sales - a.sales);
+
+    const productRows = Array.from(byProduct.entries())
+      .map(([label, value]) => ({
+        label,
+        sales: value.sales,
+        purchases: value.purchases,
+        profit: value.profit,
+        soldLb: value.soldLb,
+        boughtLb: value.boughtLb,
+        inventory: value.inventory,
+        avgSalePrice: value.saleCount > 0 ? value.saleTotal / value.saleCount : 0,
+        avgPurchasePrice: value.purchaseCount > 0 ? value.purchaseTotal / value.purchaseCount : 0,
+        margin: value.sales > 0 ? (value.profit / value.sales) * 100 : 0,
+      }))
+      .sort((a, b) => b.sales - a.sales);
+
     return {
-      salesByAssociation: Array.from(byAssociation.entries()).map(([label, value]) => ({ label, value: value.sales })).sort((a, b) => b.value - a.value),
-      profitByAssociation: Array.from(byAssociation.entries()).map(([label, value]) => ({ label, value: value.profit })).sort((a, b) => b.value - a.value),
-      inventoryByAssociation: Array.from(byAssociation.entries()).map(([label, value]) => ({ label, value: value.inventory })).sort((a, b) => b.value - a.value),
-      soldLbByProduct: Array.from(byProduct.entries()).map(([label, value]) => ({ label, value: value.soldLb })).sort((a, b) => b.value - a.value),
+      associationRows,
+      productRows,
+      salesByAssociation: associationRows.map((row) => ({ label: row.label, value: row.sales })).sort((a, b) => b.value - a.value),
+      purchasesByAssociation: associationRows.map((row) => ({ label: row.label, value: row.purchases })).sort((a, b) => b.value - a.value),
+      profitByAssociation: associationRows.map((row) => ({ label: row.label, value: row.profit })).sort((a, b) => b.value - a.value),
+      lossesByAssociation: associationRows.map((row) => ({ label: row.label, value: Math.max(row.purchases - row.sales, 0) })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      inventoryByAssociation: associationRows.map((row) => ({ label: row.label, value: row.inventory })).sort((a, b) => b.value - a.value),
+      soldLbByProduct: productRows.map((row) => ({ label: row.label, value: row.soldLb })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      boughtLbByProduct: productRows.map((row) => ({ label: row.label, value: row.boughtLb })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      avgSalePriceByProduct: productRows.map((row) => ({ label: row.label, value: row.avgSalePrice })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      avgPurchasePriceByProduct: productRows.map((row) => ({ label: row.label, value: row.avgPurchasePrice })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      inventoryByProduct: productRows.map((row) => ({ label: row.label, value: row.inventory })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      marginByProduct: productRows.map((row) => ({ label: row.label, value: row.margin })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
+      topCompanyBySales: [...associationRows].sort((a, b) => b.sales - a.sales)[0],
+      topCompanyByProfit: [...associationRows].sort((a, b) => b.profit - a.profit)[0],
+      topCompanyByInventory: [...associationRows].sort((a, b) => b.inventory - a.inventory)[0],
+      topProductByInventory: [...productRows].sort((a, b) => b.inventory - a.inventory)[0],
+      topProductByProfit: [...productRows].sort((a, b) => b.profit - a.profit)[0],
+      topProductBySales: [...productRows].sort((a, b) => b.sales - a.sales)[0],
     };
   }, [movements, allProducts, selectedAssociationId, associations]);
 
@@ -989,11 +1105,162 @@ export default function App() {
             </div>
           </section>
 
-          <section className="chartGrid" id="charts">
+          <section className="panel" id="charts">
+            <div className="panelHeader">
+              <div>
+                <h2>Inteligencia comercial</h2>
+                <p>Lectura rápida para comparar compras, ventas, precios, pérdidas y utilidades.</p>
+              </div>
+            </div>
+
+            <section className="metricGrid reportMetricGrid">
+              <div className="metric">
+                <span>🏆</span>
+                <div>
+                  <small>Empresa con más ventas</small>
+                  <strong>{adminSummary.topCompanyBySales?.label || "Sin datos"}</strong>
+                  <small>{money(adminSummary.topCompanyBySales?.sales || 0)}</small>
+                </div>
+              </div>
+
+              <div className="metric">
+                <span>💰</span>
+                <div>
+                  <small>Empresa con más utilidad</small>
+                  <strong>{adminSummary.topCompanyByProfit?.label || "Sin datos"}</strong>
+                  <small>{money(adminSummary.topCompanyByProfit?.profit || 0)}</small>
+                </div>
+              </div>
+
+              <div className="metric">
+                <span>🐟</span>
+                <div>
+                  <small>Producto más vendido</small>
+                  <strong>{adminSummary.topProductBySales?.label || "Sin datos"}</strong>
+                  <small>{(adminSummary.topProductBySales?.soldLb || 0).toLocaleString("es-HN")} lb</small>
+                </div>
+              </div>
+
+              <div className="metric">
+                <span>📦</span>
+                <div>
+                  <small>Producto con más inventario</small>
+                  <strong>{adminSummary.topProductByInventory?.label || "Sin datos"}</strong>
+                  <small>{money(adminSummary.topProductByInventory?.inventory || 0)}</small>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section className="chartGrid">
             <BarChart title="Ventas por empresa" data={adminSummary.salesByAssociation} />
+            <BarChart title="Compras por empresa" data={adminSummary.purchasesByAssociation} />
             <BarChart title="Utilidad por empresa" data={adminSummary.profitByAssociation} />
-            <BarChart title="Inventario valorizado por empresa" data={adminSummary.inventoryByAssociation} />
+            <BarChart title="Pérdidas / saldo negativo por empresa" data={adminSummary.lossesByAssociation} />
+            <BarChart title="Libras compradas por producto" data={adminSummary.boughtLbByProduct} valueLabel={(v) => `${v.toLocaleString("es-HN")} lb`} />
             <BarChart title="Libras vendidas por producto" data={adminSummary.soldLbByProduct} valueLabel={(v) => `${v.toLocaleString("es-HN")} lb`} />
+            <BarChart title="Precio promedio de compra por producto" data={adminSummary.avgPurchasePriceByProduct} />
+            <BarChart title="Precio promedio de venta por producto" data={adminSummary.avgSalePriceByProduct} />
+            <BarChart title="Inventario valorizado por producto" data={adminSummary.inventoryByProduct} />
+            <BarChart title="Margen por producto" data={adminSummary.marginByProduct} valueLabel={(v) => `${v.toFixed(1)}%`} />
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
+                <h2>Comparativo comercial por empresa</h2>
+                <p>Resumen consolidado para identificar desempeño, utilidad y posibles pérdidas.</p>
+              </div>
+            </div>
+
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Empresa</th>
+                    <th>Ventas</th>
+                    <th>Compras</th>
+                    <th>Utilidad</th>
+                    <th>Margen</th>
+                    <th>Libras vendidas</th>
+                    <th>Inventario</th>
+                    <th>Lectura rápida</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminSummary.associationRows.length === 0 ? (
+                    <tr><td colSpan={8} className="empty">No hay datos comerciales para mostrar.</td></tr>
+                  ) : (
+                    adminSummary.associationRows.map((row) => (
+                      <tr key={row.label}>
+                        <td>{row.label}</td>
+                        <td>{money(row.sales)}</td>
+                        <td>{money(row.purchases)}</td>
+                        <td className={row.profit < 0 ? "negative" : ""}>{money(row.profit)}</td>
+                        <td>{row.margin.toFixed(1)}%</td>
+                        <td>{row.soldLb.toLocaleString("es-HN")} lb</td>
+                        <td>{money(row.inventory)}</td>
+                        <td>
+                          {row.sales === 0 && row.purchases > 0
+                            ? "Compras sin ventas registradas"
+                            : row.profit < 0
+                              ? "Revisar pérdida"
+                              : row.sales > 0
+                                ? "Con movimiento comercial"
+                                : "Sin movimiento"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
+                <h2>Análisis por producto</h2>
+                <p>Compra, venta, precios promedio, margen e inventario por producto.</p>
+              </div>
+            </div>
+
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Libras compradas</th>
+                    <th>Libras vendidas</th>
+                    <th>Precio prom. compra</th>
+                    <th>Precio prom. venta</th>
+                    <th>Ventas</th>
+                    <th>Utilidad</th>
+                    <th>Margen</th>
+                    <th>Inventario</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminSummary.productRows.length === 0 ? (
+                    <tr><td colSpan={9} className="empty">No hay datos de productos para mostrar.</td></tr>
+                  ) : (
+                    adminSummary.productRows.map((row) => (
+                      <tr key={row.label}>
+                        <td>{row.label}</td>
+                        <td>{row.boughtLb.toLocaleString("es-HN")} lb</td>
+                        <td>{row.soldLb.toLocaleString("es-HN")} lb</td>
+                        <td>{money(row.avgPurchasePrice)}</td>
+                        <td>{money(row.avgSalePrice)}</td>
+                        <td>{money(row.sales)}</td>
+                        <td className={row.profit < 0 ? "negative" : ""}>{money(row.profit)}</td>
+                        <td>{row.margin.toFixed(1)}%</td>
+                        <td>{money(row.inventory)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section className="panel" id="inventoryExecutive">
@@ -1025,7 +1292,7 @@ export default function App() {
                   ) : (
                     visibleAdminProducts.map((p) => (
                       <tr key={`${p.associationId}-${p.code}`}>
-                        <td>{p.associationName || getAssociationName(p.associationId || "")}</td>
+                        <td>{displayAssociationName(p.associationId, p.associationName)}</td>
                         <td>{p.code}</td>
                         <td>{p.name}</td>
                         <td>{p.category}</td>
@@ -1430,7 +1697,7 @@ export default function App() {
                 <tbody>
                   {allProducts.map((p) => (
                     <tr key={`${p.associationId}-${p.code}`}>
-                      <td>{p.associationName}</td>
+                      <td>{displayAssociationName(p.associationId, p.associationName)}</td>
                       <td>{p.code}</td>
                       <td>{p.name}</td>
                       <td>{p.category}</td>
