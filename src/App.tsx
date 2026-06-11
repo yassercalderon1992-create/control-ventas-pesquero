@@ -162,6 +162,36 @@ function addDays(days: number) {
   return date.toISOString().split("T")[0];
 }
 
+function normalizeText(value?: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeAssociationId(value?: string) {
+  const normalized = normalizeText(value);
+
+  if (
+    normalized === "pescadores" ||
+    normalized === "asociacionlospescadores" ||
+    normalized === "elporvenir"
+  ) {
+    return "elporvenir";
+  }
+
+  return normalized || "sin_asociacion";
+}
+
+function normalizeAssociationDisplayName(value?: string) {
+  const normalized = normalizeAssociationId(value);
+
+  if (normalized === "elporvenir") return "El Porvenir";
+
+  return String(value || "Sin asociación").trim();
+}
 
 function BarChart({
   title,
@@ -237,21 +267,29 @@ export default function App() {
   const selected = products.find((p) => p.code === code);
 
   function getAssociationName(id: string) {
-    return associations.find((a) => a.id === id)?.name || id;
+    const normalizedId = normalizeAssociationId(id);
+
+    const found = associations.find((a) =>
+      normalizeAssociationId(a.id) === normalizedId ||
+      normalizeAssociationId(a.name) === normalizedId
+    );
+
+    if (found) return normalizeAssociationDisplayName(found.name);
+
+    return normalizeAssociationDisplayName(id);
   }
 
   function displayAssociationName(associationId?: string, fallbackName?: string) {
-    const fromCatalog = associations.find((a) => a.id === associationId)?.name;
-    const raw = fromCatalog || fallbackName || associationId || "Sin asociación";
+    const normalizedId = normalizeAssociationId(associationId || fallbackName);
 
-    const normalized = raw.trim().toLowerCase();
-    const foundByName = associations.find((a) => a.name.trim().toLowerCase() === normalized);
-    if (foundByName) return foundByName.name;
+    const found = associations.find((a) =>
+      normalizeAssociationId(a.id) === normalizedId ||
+      normalizeAssociationId(a.name) === normalizedId
+    );
 
-    if (normalized === "elporvenir") return "El Porvenir";
-    if (normalized === "pescadores") return "Asociación Los Pescadores";
+    if (found) return normalizeAssociationDisplayName(found.name);
 
-    return raw;
+    return normalizeAssociationDisplayName(fallbackName || associationId || "Sin asociación");
   }
 
   useEffect(() => {
@@ -319,7 +357,7 @@ export default function App() {
         ...(d.data() as Omit<Association, "id">),
       }));
 
-      setAssociations(data.filter((a) => a.active !== false).sort((a, b) => a.name.localeCompare(b.name)));
+      setAssociations(data.sort((a, b) => normalizeAssociationDisplayName(a.name || a.id).localeCompare(normalizeAssociationDisplayName(b.name || b.id))));
     });
 
     return () => unsubscribe();
@@ -403,12 +441,12 @@ export default function App() {
         const associationId = product.associationId || d.ref.parent.parent?.id || "";
         return {
           ...product,
-          associationId,
-          associationName: product.associationName || getAssociationName(associationId),
+          associationId: normalizeAssociationId(associationId),
+          associationName: displayAssociationName(associationId, product.associationName || getAssociationName(associationId)),
         };
       });
 
-      setAllProducts(data.sort((a, b) => `${a.associationName}-${a.code}`.localeCompare(`${b.associationName}-${b.code}`)));
+      setAllProducts(data.sort((a, b) => `${displayAssociationName(a.associationId, a.associationName)}-${a.code}`.localeCompare(`${displayAssociationName(b.associationId, b.associationName)}-${b.code}`)));
     });
 
     return () => unsubscribe();
@@ -529,7 +567,7 @@ export default function App() {
     const byProduct = new Map<string, ProductSummary>();
     const visibleProducts = selectedAssociationId === "todas"
       ? allProducts
-      : allProducts.filter((p) => p.associationId === selectedAssociationId);
+      : allProducts.filter((p) => normalizeAssociationId(p.associationId) === normalizeAssociationId(selectedAssociationId));
 
     function getAssociationRow(label: string) {
       const current = byAssociation.get(label) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0 };
@@ -872,7 +910,7 @@ export default function App() {
       const utility = m.type === "Venta" ? m.qty * (m.salePriceLb - m.purchaseCostLb) : 0;
 
       return [
-        m.associationName || association,
+        displayAssociationName(m.associationId, m.associationName) || association,
         m.userEmail || "",
         m.type,
         m.date,
@@ -908,7 +946,7 @@ export default function App() {
     const rows = reportMovements.map((m) => {
       const total = m.type === "Venta" ? m.qty * m.salePriceLb : m.qty * m.purchaseCostLb;
       const utility = m.type === "Venta" ? m.qty * (m.salePriceLb - m.purchaseCostLb) : 0;
-      return [m.associationName || association, m.userEmail || "", m.type, m.date, m.code, m.product, m.qty, m.salePriceLb, m.purchaseCostLb, total, utility];
+      return [displayAssociationName(m.associationId, m.associationName) || association, m.userEmail || "", m.type, m.date, m.code, m.product, m.qty, m.salePriceLb, m.purchaseCostLb, total, utility];
     });
 
     const table = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows
@@ -946,7 +984,7 @@ export default function App() {
           <input
             value={loginUser}
             onChange={(e) => setLoginUser(e.target.value)}
-            placeholder="pescadores@pesca.com"
+            placeholder="admin@pesca.com"
           />
 
           <label>Contraseña</label>
@@ -975,7 +1013,7 @@ export default function App() {
   if (isAdmin) {
     const visibleAdminProducts = selectedAssociationId === "todas"
       ? allProducts
-      : allProducts.filter((p) => p.associationId === selectedAssociationId);
+      : allProducts.filter((p) => normalizeAssociationId(p.associationId) === normalizeAssociationId(selectedAssociationId));
 
     const visibleAssociationsCount = selectedAssociationId === "todas" ? associations.length : 1;
     const inventoryGlobalValue = visibleAdminProducts.reduce((sum, p) => sum + p.stock * p.purchaseCostLb, 0);
@@ -1093,10 +1131,10 @@ export default function App() {
                   ) : (
                     associations.map((a) => (
                       <tr key={a.id}>
-                        <td>{a.name}</td>
+                        <td>{normalizeAssociationDisplayName(a.name || a.id)}</td>
                         <td>{a.municipality || "-"}</td>
                         <td>{a.department || "-"}</td>
-                        <td><span className="ok">Activa</span></td>
+                        <td><span className={a.active === false ? "low" : "ok"}>{a.active === false ? "Inactiva" : "Activa"}</span></td>
                       </tr>
                     ))
                   )}
@@ -1291,7 +1329,7 @@ export default function App() {
                     <tr><td colSpan={8} className="empty">No hay productos para mostrar.</td></tr>
                   ) : (
                     visibleAdminProducts.map((p) => (
-                      <tr key={`${p.associationId}-${p.code}`}>
+                      <tr key={`${normalizeAssociationId(p.associationId)}-${p.code}-${p.name}`}>
                         <td>{displayAssociationName(p.associationId, p.associationName)}</td>
                         <td>{p.code}</td>
                         <td>{p.name}</td>
@@ -1368,7 +1406,7 @@ export default function App() {
                   ) : (
                     reportMovements.map((m) => (
                       <tr key={m.id}>
-                        <td>{m.associationName}</td>
+                        <td>{displayAssociationName(m.associationId, m.associationName)}</td>
                         <td>{m.type}</td>
                         <td>{m.date}</td>
                         <td>{m.product}</td>
@@ -1696,7 +1734,7 @@ export default function App() {
                 </thead>
                 <tbody>
                   {allProducts.map((p) => (
-                    <tr key={`${p.associationId}-${p.code}`}>
+                    <tr key={`${normalizeAssociationId(p.associationId)}-${p.code}-${p.name}`}>
                       <td>{displayAssociationName(p.associationId, p.associationName)}</td>
                       <td>{p.code}</td>
                       <td>{p.name}</td>
@@ -1770,7 +1808,7 @@ export default function App() {
                 ) : (
                   reportMovements.map((m) => (
                     <tr key={m.id}>
-                      <td>{m.associationName}</td>
+                      <td>{displayAssociationName(m.associationId, m.associationName)}</td>
                       <td>{m.type}</td>
                       <td>{m.date}</td>
                       <td>{m.product}</td>
