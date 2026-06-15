@@ -1133,9 +1133,9 @@ export default function App() {
     return (
       <main className="loginPage">
         <section className="loginCard">
-          <div className="loginLogo">🐟</div>
-          <h1>Control de ventas</h1>
-          <p>Sistema pesquero comunitario</p>
+          <div className="loginLogo">🌊</div>
+          <h1>Sistema de Comercialización Pesquera</h1>
+          <p>Plataforma de gestión, comercialización e inteligencia pesquera</p>
 
           <label>Correo</label>
           <input
@@ -1158,10 +1158,6 @@ export default function App() {
             Ingresar
           </button>
 
-          <div className="loginHelp">
-            <b>Usuarios configurados en Firestore:</b>
-            <p>admin@pesca.com / usuarios por empresa</p>
-          </div>
         </section>
       </main>
     );
@@ -1623,7 +1619,7 @@ export default function App() {
         <div className="brand">
           <div className="logo">🐟</div>
           <div>
-            <h2>Control de ventas</h2>
+            <h2>Sistema de Comercialización Pesquera</h2>
             <p>{association}</p>
           </div>
         </div>
@@ -1657,8 +1653,8 @@ export default function App() {
       <section className="content" id="dashboard">
         <header className="topBar" id="asociacion">
           <div>
-            <h1>Control de ventas</h1>
-            <p>Compras, ventas, inventario, caja diaria y reportes.</p>
+            <h1>Sistema de Comercialización Pesquera</h1>
+            <p>Compras, ventas, inventario, caja diaria e inteligencia comercial.</p>
           </div>
 
           <div className="associationBox">
