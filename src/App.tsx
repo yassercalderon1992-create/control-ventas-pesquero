@@ -262,6 +262,7 @@ export default function App() {
   const [cashExpense, setCashExpense] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todas");
+  const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
 
   const isAdmin = currentUser?.role === "Administrador";
   const selected = products.find((p) => p.code === code);
@@ -291,6 +292,21 @@ export default function App() {
 
     return normalizeAssociationDisplayName(fallbackName || associationId || "Sin asociación");
   }
+
+  useEffect(() => {
+    function updateOnlineStatus() {
+      setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+    }
+
+    updateOnlineStatus();
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -519,6 +535,9 @@ export default function App() {
 
   const inventoryValue = products.reduce((s, p) => s + p.stock * p.purchaseCostLb, 0);
 
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const netProfit = profit - totalExpenses;
+
   const reportSales = reportMovements
     .filter((m) => m.type === "Venta")
     .reduce((s, m) => s + m.qty * m.salePriceLb, 0);
@@ -548,6 +567,7 @@ export default function App() {
       profit: number;
       soldLb: number;
       inventory: number;
+      expenses: number;
     };
 
     type ProductSummary = {
@@ -570,7 +590,7 @@ export default function App() {
       : allProducts.filter((p) => normalizeAssociationId(p.associationId) === normalizeAssociationId(selectedAssociationId));
 
     function getAssociationRow(label: string) {
-      const current = byAssociation.get(label) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0 };
+      const current = byAssociation.get(label) || { sales: 0, purchases: 0, profit: 0, soldLb: 0, inventory: 0, expenses: 0 };
       byAssociation.set(label, current);
       return current;
     }
@@ -624,6 +644,12 @@ export default function App() {
       }
     });
 
+    expenses.forEach((e) => {
+      const associationLabel = displayAssociationName(e.associationId, e.associationName);
+      const associationRow = getAssociationRow(associationLabel);
+      associationRow.expenses += e.amount;
+    });
+
     visibleProducts.forEach((p) => {
       const associationLabel = displayAssociationName(p.associationId, p.associationName);
       const associationRow = getAssociationRow(associationLabel);
@@ -642,8 +668,11 @@ export default function App() {
         profit: value.profit,
         soldLb: value.soldLb,
         inventory: value.inventory,
+        expenses: value.expenses,
+        netProfit: value.profit - value.expenses,
         balance: value.sales - value.purchases,
         margin: value.sales > 0 ? (value.profit / value.sales) * 100 : 0,
+        netMargin: value.sales > 0 ? ((value.profit - value.expenses) / value.sales) * 100 : 0,
       }))
       .sort((a, b) => b.sales - a.sales);
 
@@ -668,6 +697,8 @@ export default function App() {
       salesByAssociation: associationRows.map((row) => ({ label: row.label, value: row.sales })).sort((a, b) => b.value - a.value),
       purchasesByAssociation: associationRows.map((row) => ({ label: row.label, value: row.purchases })).sort((a, b) => b.value - a.value),
       profitByAssociation: associationRows.map((row) => ({ label: row.label, value: row.profit })).sort((a, b) => b.value - a.value),
+      netProfitByAssociation: associationRows.map((row) => ({ label: row.label, value: row.netProfit })).sort((a, b) => b.value - a.value),
+      expensesByAssociation: associationRows.map((row) => ({ label: row.label, value: row.expenses })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
       lossesByAssociation: associationRows.map((row) => ({ label: row.label, value: Math.max(row.purchases - row.sales, 0) })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
       inventoryByAssociation: associationRows.map((row) => ({ label: row.label, value: row.inventory })).sort((a, b) => b.value - a.value),
       soldLbByProduct: productRows.map((row) => ({ label: row.label, value: row.soldLb })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
@@ -678,12 +709,56 @@ export default function App() {
       marginByProduct: productRows.map((row) => ({ label: row.label, value: row.margin })).filter((row) => row.value > 0).sort((a, b) => b.value - a.value),
       topCompanyBySales: [...associationRows].sort((a, b) => b.sales - a.sales)[0],
       topCompanyByProfit: [...associationRows].sort((a, b) => b.profit - a.profit)[0],
+      topCompanyByNetProfit: [...associationRows].sort((a, b) => b.netProfit - a.netProfit)[0],
       topCompanyByInventory: [...associationRows].sort((a, b) => b.inventory - a.inventory)[0],
       topProductByInventory: [...productRows].sort((a, b) => b.inventory - a.inventory)[0],
       topProductByProfit: [...productRows].sort((a, b) => b.profit - a.profit)[0],
       topProductBySales: [...productRows].sort((a, b) => b.sales - a.sales)[0],
     };
-  }, [movements, allProducts, selectedAssociationId, associations]);
+  }, [movements, allProducts, selectedAssociationId, associations, expenses]);
+
+  const monthlySummary = useMemo(() => {
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const map = new Map<string, { label: string; sales: number; purchases: number; profit: number; expenses: number; netProfit: number; soldLb: number }>();
+
+    function getMonthLabel(dateValue: string) {
+      const date = new Date(`${dateValue}T00:00:00`);
+      if (Number.isNaN(date.getTime())) return "Sin fecha";
+      return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+    }
+
+    function getRow(dateValue: string) {
+      const label = getMonthLabel(dateValue);
+      const current = map.get(label) || { label, sales: 0, purchases: 0, profit: 0, expenses: 0, netProfit: 0, soldLb: 0 };
+      map.set(label, current);
+      return current;
+    }
+
+    movements.forEach((m) => {
+      const row = getRow(m.date);
+      if (m.type === "Venta") {
+        row.sales += m.qty * m.salePriceLb;
+        row.profit += m.qty * (m.salePriceLb - m.purchaseCostLb);
+        row.soldLb += m.qty;
+      }
+      if (m.type === "Compra") {
+        row.purchases += m.qty * m.purchaseCostLb;
+      }
+    });
+
+    expenses.forEach((e) => {
+      const row = getRow(e.date);
+      row.expenses += e.amount;
+    });
+
+    return Array.from(map.values())
+      .map((row) => ({ ...row, netProfit: row.profit - row.expenses }))
+      .sort((a, b) => {
+        const [am, ay] = a.label.split(" ");
+        const [bm, by] = b.label.split(" ");
+        return Number(ay) - Number(by) || monthNames.indexOf(am) - monthNames.indexOf(bm);
+      });
+  }, [movements, expenses]);
 
   const productPerformance = useMemo(() => {
     const map = new Map<string, { product: string; qty: number; profit: number }>();
@@ -941,25 +1016,107 @@ export default function App() {
 
 
 
+  function htmlCell(value: unknown) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function buildHtmlTable(title: string, headers: string[], rows: unknown[][]) {
+    return `
+      <h2>${htmlCell(title)}</h2>
+      <table border="1">
+        <thead><tr>${headers.map((h) => `<th>${htmlCell(h)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.length === 0 ? `<tr><td colspan="${headers.length}">Sin datos</td></tr>` : rows
+          .map((row) => `<tr>${row.map((cell) => `<td>${htmlCell(cell)}</td>`).join("")}</tr>`)
+          .join("")}</tbody>
+      </table><br/>`;
+  }
+
   function exportReportExcel() {
-    const headers = ["Asociación", "Usuario", "Tipo", "Fecha", "Código", "Artículo", "Libras", "Precio venta/lb", "Costo compra/lb", "Total", "Utilidad"];
-    const rows = reportMovements.map((m) => {
+    const movementRows = reportMovements.map((m) => {
       const total = m.type === "Venta" ? m.qty * m.salePriceLb : m.qty * m.purchaseCostLb;
       const utility = m.type === "Venta" ? m.qty * (m.salePriceLb - m.purchaseCostLb) : 0;
       return [displayAssociationName(m.associationId, m.associationName) || association, m.userEmail || "", m.type, m.date, m.code, m.product, m.qty, m.salePriceLb, m.purchaseCostLb, total, utility];
     });
 
-    const table = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows
-      .map((row) => `<tr>${row.map((cell) => `<td>${String(cell).replace(/</g, "&lt;")}</td>`).join("")}</tr>`)
-      .join("")}</tbody></table>`;
+    const expenseRows = expenses
+      .filter((e) => e.date >= reportStartDate && e.date <= reportEndDate)
+      .map((e) => [displayAssociationName(e.associationId, e.associationName), e.userEmail || "", e.date, e.concept, e.amount, e.supplierName || "", e.supplierCommunity || "", e.notes || ""]);
 
-    const blob = new Blob([`﻿<html><body>${table}</body></html>`], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const inventoryRows = (isAdmin ? allProducts : products).map((p) => [
+      displayAssociationName(p.associationId || selectedAssociationId, p.associationName || association),
+      p.code,
+      p.name,
+      p.category,
+      p.stock,
+      p.purchaseCostLb,
+      p.lastSalePriceLb || 0,
+      p.stock * p.purchaseCostLb,
+    ]);
+
+    const associationRows = adminSummary.associationRows.map((row) => [
+      row.label,
+      row.sales,
+      row.purchases,
+      row.profit,
+      row.expenses,
+      row.netProfit,
+      `${row.netMargin.toFixed(1)}%`,
+      row.soldLb,
+      row.inventory,
+    ]);
+
+    const productRows = adminSummary.productRows.map((row) => [
+      row.label,
+      row.boughtLb,
+      row.soldLb,
+      row.avgPurchasePrice,
+      row.avgSalePrice,
+      row.sales,
+      row.profit,
+      `${row.margin.toFixed(1)}%`,
+      row.inventory,
+    ]);
+
+    const monthlyRows = monthlySummary.map((row) => [row.label, row.sales, row.purchases, row.profit, row.expenses, row.netProfit, row.soldLb]);
+
+    const summaryRows = [
+      ["Periodo", `${reportStartDate} a ${reportEndDate}`],
+      ["Asociación / filtro", association],
+      ["Ventas", reportSales],
+      ["Compras", reportPurchases],
+      ["Utilidad bruta", reportProfit],
+      ["Gastos operativos", reportExpenses],
+      ["Utilidad neta", netProfitAfterExpenses],
+      ["Libras vendidas", reportSoldLb],
+      ["Inventario valorizado", isAdmin ? allProducts.reduce((s, p) => s + p.stock * p.purchaseCostLb, 0) : inventoryValue],
+    ];
+
+    const workbook = `
+      <html><head><meta charset="UTF-8" /></head><body>
+      ${buildHtmlTable("Resumen Ejecutivo", ["Indicador", "Valor"], summaryRows)}
+      ${buildHtmlTable("Ranking por Empresa", ["Empresa", "Ventas", "Compras", "Utilidad bruta", "Gastos", "Utilidad neta", "Margen neto", "Libras vendidas", "Inventario"], associationRows)}
+      ${buildHtmlTable("Ranking por Producto", ["Producto", "Libras compradas", "Libras vendidas", "Precio prom. compra", "Precio prom. venta", "Ventas", "Utilidad", "Margen", "Inventario"], productRows)}
+      ${buildHtmlTable("Tendencia Mensual", ["Mes", "Ventas", "Compras", "Utilidad bruta", "Gastos", "Utilidad neta", "Libras vendidas"], monthlyRows)}
+      ${buildHtmlTable("Movimientos", ["Asociación", "Usuario", "Tipo", "Fecha", "Código", "Artículo", "Libras", "Precio venta/lb", "Costo compra/lb", "Total", "Utilidad"], movementRows)}
+      ${buildHtmlTable("Gastos", ["Asociación", "Usuario", "Fecha", "Concepto", "Monto", "Proveedor", "Comunidad", "Notas"], expenseRows)}
+      ${buildHtmlTable("Inventario", ["Empresa", "Código", "Producto", "Categoría", "Stock", "Costo compra/lb", "Último precio venta/lb", "Valor inventario"], inventoryRows)}
+      </body></html>`;
+
+    const blob = new Blob(["\ufeff" + workbook], { type: "application/vnd.ms-excel;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `reporte_${association}_${reportStartDate}_a_${reportEndDate}.xls`;
+    link.download = `reporte_ejecutivo_${association}_${reportStartDate}_a_${reportEndDate}.xls`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportExecutivePDF() {
+    window.print();
   }
 
   if (loadingUser) {
@@ -1015,7 +1172,7 @@ export default function App() {
       ? allProducts
       : allProducts.filter((p) => normalizeAssociationId(p.associationId) === normalizeAssociationId(selectedAssociationId));
 
-    const visibleAssociationsCount = selectedAssociationId === "todas" ? associations.length : 1;
+    const visibleAssociationsCount = selectedAssociationId === "todas" ? associations.filter((a) => a.active !== false).length : 1;
     const inventoryGlobalValue = visibleAdminProducts.reduce((sum, p) => sum + p.stock * p.purchaseCostLb, 0);
     const avgProfitMargin = totalSales > 0 ? (profit / totalSales) * 100 : 0;
 
@@ -1049,7 +1206,7 @@ export default function App() {
             <h3>Lectura ejecutiva</h3>
             <p>Empresas <b>{visibleAssociationsCount}</b></p>
             <p>Ventas <b>{money(totalSales)}</b></p>
-            <p>Utilidad <b>{money(profit)}</b></p>
+            <p>Utilidad neta <b>{money(netProfit)}</b></p>
           </div>
         </aside>
 
@@ -1083,8 +1240,11 @@ export default function App() {
             <div className="metric"><span>🛒</span><div><small>Ventas</small><strong>{money(totalSales)}</strong></div></div>
             <div className="metric"><span>🧾</span><div><small>Compras</small><strong>{money(totalPurchases)}</strong></div></div>
             <div className="metric"><span>💰</span><div><small>Utilidad bruta</small><strong>{money(profit)}</strong></div></div>
+            <div className="metric"><span>⛽</span><div><small>Gastos operativos</small><strong>{money(totalExpenses)}</strong></div></div>
+            <div className="metric"><span>✅</span><div><small>Utilidad neta</small><strong className={netProfit < 0 ? "negative" : ""}>{money(netProfit)}</strong></div></div>
             <div className="metric"><span>📦</span><div><small>Inventario valorizado</small><strong>{money(inventoryGlobalValue)}</strong></div></div>
             <div className="metric"><span>⚖️</span><div><small>Libras vendidas</small><strong>{soldLb.toLocaleString("es-HN")} lb</strong></div></div>
+            <div className="metric"><span>{isOnline ? "🟢" : "🔴"}</span><div><small>Conectividad</small><strong>{isOnline ? "Online" : "Offline"}</strong></div></div>
           </section>
 
           <section className="insightGrid executiveInsightGrid">
@@ -1164,9 +1324,18 @@ export default function App() {
               <div className="metric">
                 <span>💰</span>
                 <div>
-                  <small>Empresa con más utilidad</small>
+                  <small>Empresa con más utilidad bruta</small>
                   <strong>{adminSummary.topCompanyByProfit?.label || "Sin datos"}</strong>
                   <small>{money(adminSummary.topCompanyByProfit?.profit || 0)}</small>
+                </div>
+              </div>
+
+              <div className="metric">
+                <span>✅</span>
+                <div>
+                  <small>Empresa con más utilidad neta</small>
+                  <strong>{adminSummary.topCompanyByNetProfit?.label || "Sin datos"}</strong>
+                  <small>{money(adminSummary.topCompanyByNetProfit?.netProfit || 0)}</small>
                 </div>
               </div>
 
@@ -1193,7 +1362,9 @@ export default function App() {
           <section className="chartGrid">
             <BarChart title="Ventas por empresa" data={adminSummary.salesByAssociation} />
             <BarChart title="Compras por empresa" data={adminSummary.purchasesByAssociation} />
-            <BarChart title="Utilidad por empresa" data={adminSummary.profitByAssociation} />
+            <BarChart title="Gastos operativos por empresa" data={adminSummary.expensesByAssociation} />
+            <BarChart title="Utilidad bruta por empresa" data={adminSummary.profitByAssociation} />
+            <BarChart title="Utilidad neta por empresa" data={adminSummary.netProfitByAssociation} />
             <BarChart title="Pérdidas / saldo negativo por empresa" data={adminSummary.lossesByAssociation} />
             <BarChart title="Libras compradas por producto" data={adminSummary.boughtLbByProduct} valueLabel={(v) => `${v.toLocaleString("es-HN")} lb`} />
             <BarChart title="Libras vendidas por producto" data={adminSummary.soldLbByProduct} valueLabel={(v) => `${v.toLocaleString("es-HN")} lb`} />
@@ -1201,6 +1372,22 @@ export default function App() {
             <BarChart title="Precio promedio de venta por producto" data={adminSummary.avgSalePriceByProduct} />
             <BarChart title="Inventario valorizado por producto" data={adminSummary.inventoryByProduct} />
             <BarChart title="Margen por producto" data={adminSummary.marginByProduct} valueLabel={(v) => `${v.toFixed(1)}%`} />
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <div>
+                <h2>Tendencias mensuales</h2>
+                <p>Comparativo de ventas, compras, gastos, utilidad neta y libras vendidas por mes.</p>
+              </div>
+            </div>
+            <section className="chartGrid">
+              <BarChart title="Ventas por mes" data={monthlySummary.map((row) => ({ label: row.label, value: row.sales }))} />
+              <BarChart title="Compras por mes" data={monthlySummary.map((row) => ({ label: row.label, value: row.purchases }))} />
+              <BarChart title="Gastos por mes" data={monthlySummary.map((row) => ({ label: row.label, value: row.expenses }))} />
+              <BarChart title="Utilidad neta por mes" data={monthlySummary.map((row) => ({ label: row.label, value: row.netProfit }))} />
+              <BarChart title="Libras vendidas por mes" data={monthlySummary.map((row) => ({ label: row.label, value: row.soldLb }))} valueLabel={(v) => `${v.toLocaleString("es-HN")} lb`} />
+            </section>
           </section>
 
           <section className="panel">
@@ -1218,8 +1405,10 @@ export default function App() {
                     <th>Empresa</th>
                     <th>Ventas</th>
                     <th>Compras</th>
-                    <th>Utilidad</th>
-                    <th>Margen</th>
+                    <th>Utilidad bruta</th>
+                    <th>Gastos</th>
+                    <th>Utilidad neta</th>
+                    <th>Margen neto</th>
                     <th>Libras vendidas</th>
                     <th>Inventario</th>
                     <th>Lectura rápida</th>
@@ -1227,7 +1416,7 @@ export default function App() {
                 </thead>
                 <tbody>
                   {adminSummary.associationRows.length === 0 ? (
-                    <tr><td colSpan={8} className="empty">No hay datos comerciales para mostrar.</td></tr>
+                    <tr><td colSpan={10} className="empty">No hay datos comerciales para mostrar.</td></tr>
                   ) : (
                     adminSummary.associationRows.map((row) => (
                       <tr key={row.label}>
@@ -1235,14 +1424,16 @@ export default function App() {
                         <td>{money(row.sales)}</td>
                         <td>{money(row.purchases)}</td>
                         <td className={row.profit < 0 ? "negative" : ""}>{money(row.profit)}</td>
-                        <td>{row.margin.toFixed(1)}%</td>
+                        <td>{money(row.expenses)}</td>
+                        <td className={row.netProfit < 0 ? "negative" : ""}>{money(row.netProfit)}</td>
+                        <td>{row.netMargin.toFixed(1)}%</td>
                         <td>{row.soldLb.toLocaleString("es-HN")} lb</td>
                         <td>{money(row.inventory)}</td>
                         <td>
                           {row.sales === 0 && row.purchases > 0
                             ? "Compras sin ventas registradas"
-                            : row.profit < 0
-                              ? "Revisar pérdida"
+                            : row.netProfit < 0
+                              ? "Revisar pérdida neta"
                               : row.sales > 0
                                 ? "Con movimiento comercial"
                                 : "Sin movimiento"}
@@ -1355,6 +1546,7 @@ export default function App() {
               <div className="reportActions">
                 <button onClick={exportReportCSV}>Exportar CSV</button>
                 <button onClick={exportReportExcel}>Exportar Excel</button>
+                <button onClick={exportExecutivePDF}>PDF ejecutivo</button>
               </div>
             </div>
 
@@ -1496,8 +1688,11 @@ export default function App() {
           <div className="metric"><span>🛒</span><div><small>Ventas</small><strong>{money(totalSales)}</strong></div></div>
           <div className="metric"><span>🧾</span><div><small>Compras</small><strong>{money(totalPurchases)}</strong></div></div>
           <div className="metric"><span>⚖️</span><div><small>Libras vendidas</small><strong>{soldLb.toLocaleString("es-HN")} lb</strong></div></div>
-          <div className="metric"><span>📊</span><div><small>Utilidad</small><strong>{money(profit)}</strong></div></div>
+          <div className="metric"><span>📊</span><div><small>Utilidad bruta</small><strong>{money(profit)}</strong></div></div>
+          <div className="metric"><span>⛽</span><div><small>Gastos</small><strong>{money(totalExpenses)}</strong></div></div>
+          <div className="metric"><span>✅</span><div><small>Utilidad neta</small><strong className={netProfit < 0 ? "negative" : ""}>{money(netProfit)}</strong></div></div>
           <div className="metric"><span>📦</span><div><small>Inventario</small><strong>{money(inventoryValue)}</strong></div></div>
+          <div className="metric"><span>{isOnline ? "🟢" : "🔴"}</span><div><small>Conectividad</small><strong>{isOnline ? "Online" : "Offline"}</strong></div></div>
         </section>
 
         <section className="insightGrid">
