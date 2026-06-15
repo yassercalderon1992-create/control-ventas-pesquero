@@ -1119,3 +1119,76 @@ td {
     font-size: 34px;
   }
 }
+/* =========================================================
+   19. UTILIDAD REAL, TENDENCIAS Y OFFLINE
+========================================================= */
+
+.negative {
+  color: #dc2626 !important;
+}
+
+.metric strong.negative {
+  color: #dc2626 !important;
+}
+
+.reportActions button {
+  white-space: nowrap;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+
+  .sidebar,
+  .associationBox,
+  .reportActions,
+  .tabs,
+  .logoutBtn,
+  button,
+  input,
+  select {
+    display: none !important;
+  }
+
+  .appShell,
+  .executiveShell {
+    display: block !important;
+    background: white !important;
+  }
+
+  .content,
+  .executiveContent {
+    padding: 0 !important;
+  }
+
+  .panel,
+  .metric,
+  .insightCard,
+  .chartCard {
+    box-shadow: none !important;
+    border: 1px solid #dbe4ef !important;
+    break-inside: avoid;
+  }
+
+  .topBar,
+  .executiveTopBar {
+    display: block !important;
+  }
+
+  .chartGrid,
+  .metricGrid,
+  .reportMetricGrid,
+  .executiveMetricGrid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  table {
+    font-size: 11px !important;
+  }
+
+  th,
+  td {
+    padding: 7px !important;
+  }
+}
