@@ -1,32 +1,71 @@
 import { Routes, Route } from "react-router-dom";
 
-import LoginPage from "../pages/LoginPage";
-import DashboardPage from "../pages/DashboardPage";
-import InventoryPage from "../pages/InventoryPage";
-import MovementsPage from "../pages/MovementsPage";
-import ReportsPage from "../pages/ReportsPage";
-import AdminPage from "../pages/AdminPage";
+import ProtectedRoute from "./ProtectedRoute";
+
+import { useAuth } from "../hooks/useAuth";
+
+import LoginPage from "../Login/LoginPage";
+import DashboardPage from "../Dashboard/DashboardPage";
+import InventoryPage from "../Inventory/InventoryPage";
+import MovementsPage from "../Movements/MovementsPage";
+import ReportsPage from "../Reports/ReportsPage";
+import AdminPage from "../Admin/AdminPage";
 
 export function AppRoutes() {
+  const { authenticated, loading } = useAuth();
 
-    return (
+  if (loading) {
+    return <h2>Cargando...</h2>;
+  }
 
-        <Routes>
+  return (
+    <Routes>
+      <Route path="/" element={<LoginPage />} />
 
-            <Route path="/" element={<LoginPage/>} />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute isAuthenticated={authenticated}>
+            <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
 
-            <Route path="/dashboard" element={<DashboardPage/>} />
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute isAuthenticated={authenticated}>
+            <InventoryPage />
+          </ProtectedRoute>
+        }
+      />
 
-            <Route path="/inventory" element={<InventoryPage/>} />
+      <Route
+        path="/movements"
+        element={
+          <ProtectedRoute isAuthenticated={authenticated}>
+            <MovementsPage />
+          </ProtectedRoute>
+        }
+      />
 
-            <Route path="/movements" element={<MovementsPage/>} />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute isAuthenticated={authenticated}>
+            <ReportsPage />
+          </ProtectedRoute>
+        }
+      />
 
-            <Route path="/reports" element={<ReportsPage/>} />
-
-            <Route path="/admin" element={<AdminPage/>} />
-
-        </Routes>
-
-    )
-
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute isAuthenticated={authenticated}>
+            <AdminPage />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
+  );
 }
