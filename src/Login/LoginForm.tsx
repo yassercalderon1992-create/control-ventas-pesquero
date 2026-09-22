@@ -1,32 +1,50 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authService } from "../services/authService";
+
+import { login } from "../firebase/auth";
 
 export default function LoginForm() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const navigate = useNavigate();
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    setError("");
     setLoading(true);
+    setError("");
 
     try {
-      const profile = await authService.login(email, password);
+      const credential = await login(email, password);
 
-      console.log("Usuario autenticado:", profile);
+      console.log("Usuario:", credential.user);
 
       navigate("/dashboard");
     } catch (err: any) {
       console.error(err);
 
-      setError(err.message || "Error al iniciar sesión.");
+      switch (err.code) {
+        case "auth/invalid-credential":
+        case "auth/user-not-found":
+        case "auth/wrong-password":
+          setError("Correo o contraseña incorrectos.");
+          break;
+
+        case "auth/invalid-email":
+          setError("Correo electrónico inválido.");
+          break;
+
+        case "auth/too-many-requests":
+          setError("Demasiados intentos.");
+          break;
+
+        default:
+          setError("No fue posible iniciar sesión.");
+      }
     } finally {
       setLoading(false);
     }
@@ -34,12 +52,13 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="login-form">
-      <label>Correo electrónico</label>
+
+      <label>Correo</label>
 
       <input
         type="email"
-        placeholder="usuario@correo.com"
         value={email}
+        placeholder="correo@ejemplo.com"
         onChange={(e) => setEmail(e.target.value)}
         required
       />
@@ -48,14 +67,14 @@ export default function LoginForm() {
 
       <input
         type="password"
-        placeholder="********"
         value={password}
+        placeholder="********"
         onChange={(e) => setPassword(e.target.value)}
         required
       />
 
       {error && (
-        <p style={{ color: "red", marginTop: "10px" }}>
+        <p style={{ color: "red" }}>
           {error}
         </p>
       )}
@@ -66,6 +85,7 @@ export default function LoginForm() {
       >
         {loading ? "Ingresando..." : "Iniciar sesión"}
       </button>
+
     </form>
   );
 }

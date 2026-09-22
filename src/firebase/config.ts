@@ -7,7 +7,7 @@ const firebaseConfig = {
   storageBucket: "pesca-2026.firebasestorage.app",
   messagingSenderId: "176064740076",
   appId: "1:176064740076:web:b8c53d8eb1d49484d903c9",
-  measurementId: "G-RX5VZTGJ99"
+  measurementId: "G-RX5VZTGJ99",
 };
 
 export const app = initializeApp(firebaseConfig);
