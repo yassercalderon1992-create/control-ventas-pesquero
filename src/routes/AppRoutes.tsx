@@ -1,25 +1,31 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
+
+import ProtectedRoute from "./ProtectedRoute";
+
+import { useAuth } from "../hooks/useAuth";
 
 import LoginPage from "../Login/LoginPage";
-
 import DashboardPage from "../Dashboard/DashboardPage";
 import InventoryPage from "../Inventory/InventoryPage";
 import MovementsPage from "../Movements/MovementsPage";
 import ReportsPage from "../Reports/ReportsPage";
 import AdminPage from "../Admin/AdminPage";
 
-import ProtectedRoute from "./ProtectedRoute";
-
 export function AppRoutes() {
+  const { authenticated, loading } = useAuth();
+
+  if (loading) {
+    return <h2>Cargando...</h2>;
+  }
+
   return (
     <Routes>
-
       <Route path="/" element={<LoginPage />} />
 
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute isAuthenticated={authenticated}>
             <DashboardPage />
           </ProtectedRoute>
         }
@@ -28,7 +34,7 @@ export function AppRoutes() {
       <Route
         path="/inventory"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute isAuthenticated={authenticated}>
             <InventoryPage />
           </ProtectedRoute>
         }
@@ -37,7 +43,7 @@ export function AppRoutes() {
       <Route
         path="/movements"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute isAuthenticated={authenticated}>
             <MovementsPage />
           </ProtectedRoute>
         }
@@ -46,7 +52,7 @@ export function AppRoutes() {
       <Route
         path="/reports"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute isAuthenticated={authenticated}>
             <ReportsPage />
           </ProtectedRoute>
         }
@@ -55,17 +61,11 @@ export function AppRoutes() {
       <Route
         path="/admin"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute isAuthenticated={authenticated}>
             <AdminPage />
           </ProtectedRoute>
         }
       />
-
-      <Route
-        path="*"
-        element={<Navigate to="/" replace />}
-      />
-
     </Routes>
   );
 }

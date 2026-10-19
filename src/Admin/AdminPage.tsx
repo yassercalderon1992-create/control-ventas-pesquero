@@ -1,10 +1,5 @@
-import MainLayout from "../layout/MainLayout";
+src/Admin/AdminPage.tsx
 
 export default function AdminPage() {
-  return (
-    <MainLayout>
-      <h1>Administración</h1>
-      <p>Esta es la página de administración.</p>
-    </MainLayout>
-  );
+  return <h1>Administración</h1>;
 }

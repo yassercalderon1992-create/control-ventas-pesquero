@@ -1,63 +1,21 @@
-export interface Product {
+export interface Product{
 
-  //=========================================
-  // Identificación
-  //=========================================
+    code:string
 
-  id: string;
-  active: boolean;
+    name:string
 
-  //=========================================
-  // Asociación
-  //=========================================
+    category:string
 
-  associationId: string;
-  associationName: string;
+    unit:string
 
-  //=========================================
-  // Categoría
-  //=========================================
+    stock:number
 
-  categoryId: string;
-  categoryName: string;
+    purchaseCostLb:number
 
-  //=========================================
-  // Especie
-  //=========================================
+    lastSalePriceLb?:number
 
-  speciesId: string;
-  speciesName: string;
-  scientificName: string;
+    associationId:string
 
-  //=========================================
-  // Unidad
-  //=========================================
+    associationName:string
 
-  unitId: string;
-  unitName: string;
-
-  //=========================================
-  // Configuración del producto
-  //=========================================
-
-  stockMinimo: number;
-
-  purchasePrice: number;
-  salePrice: number;
-
-  barcode?: string;
-  notes?: string;
-  imageUrl?: string;
-
-  //=========================================
-  // Auditoría
-  //=========================================
-
-  createdBy: string;
-  createdAt: Date;
-
-  updatedBy?: string;
-  updatedAt?: Date;
-
-  deletedAt?: Date;
 }

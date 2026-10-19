@@ -1,17 +1,17 @@
 import { Navigate } from "react-router-dom";
-import { auth } from "../firebase/auth";
 
-interface Props {
-  children: JSX.Element;
+interface ProtectedRouteProps {
+  isAuthenticated: boolean;
+  children: React.ReactNode;
 }
 
 export default function ProtectedRoute({
+  isAuthenticated,
   children,
-}: Props) {
-
-  if (!auth.currentUser) {
+}: ProtectedRouteProps) {
+  if (!isAuthenticated) {
     return <Navigate to="/" replace />;
   }
 
-  return children;
+  return <>{children}</>;
 }
