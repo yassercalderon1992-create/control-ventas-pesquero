@@ -1,21 +1,27 @@
-export interface Product{
 
-    code:string
+export interface Product {
+  // Identificación
+  id?: string;
+  code: string;
 
-    name:string
+  // Información del producto
+  name: string;
+  category: string;
+  unit: string;
 
-    category:string
+  // Existencias y costos
+  stock: number;
+  stockMinimo?: number;
+  purchaseCostLb: number;
+  lastSalePriceLb?: number;
 
-    unit:string
+  // Asociación propietaria
+  associationId: string;
+  associationName: string;
 
-    stock:number
+  // Estado del producto
+  active?: boolean;
 
-    purchaseCostLb:number
-
-    lastSalePriceLb?:number
-
-    associationId:string
-
-    associationName:string
-
+  // Trazabilidad del inventario
+  lastMovementId?: string;
 }
