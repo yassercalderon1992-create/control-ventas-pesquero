@@ -122,18 +122,30 @@ function totalOf(record: ReportRecord): number {
 
 function csvCell(value: unknown): string {
   const text = value == null ? "" : String(value);
+  // Escapar comillas dobles para conservar comas, punto y coma y saltos de línea
+  // dentro de una celda sin desplazar el resto de las columnas.
   return `"${text.replace(/"/g, '""')}"`;
 }
 
 function exportCsv(filename: string, headers: string[], rows: unknown[][]): void {
-  const content = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  // Excel en configuraciones regionales de español suele esperar punto y coma
+  // como separador. La directiva `sep=;` le indica explícitamente el delimitador,
+  // evitando que toda la fila aparezca dentro de la columna A.
+  const csvRows = [headers, ...rows]
+    .map((row) => row.map(csvCell).join(";"))
+    .join("\r\n");
+  const content = `sep=;\r\n${csvRows}`;
   const blob = new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = filename;
+  anchor.download = filename.toLowerCase().endsWith(".csv") ? filename : `${filename}.csv`;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  // Revocar después de que el navegador haya iniciado la descarga.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function mapDocs(snapshot: Awaited<ReturnType<typeof getDocs>>, association: AssociationOption): ReportRecord[] {

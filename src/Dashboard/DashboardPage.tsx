@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { Link } from "react-router-dom";
 
@@ -49,7 +49,13 @@ const styles: Record<string, CSSProperties> = {
   title: { margin: 0, fontSize: 28, fontWeight: 800 },
   subtitle: { margin: "7px 0 0", color: "#64748b", lineHeight: 1.5 },
   panel: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 11, padding: 19, minWidth: 0 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 },
+  metricCard: { display: "flex", alignItems: "center", gap: 14, minHeight: 112, padding: 18, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, boxShadow: "0 8px 24px rgb(15 23 42 / 5%)", minWidth: 0, transition: "transform 160ms ease, box-shadow 160ms ease" },
+  metricIcon: { display: "grid", flex: "0 0 54px", width: 54, height: 54, placeItems: "center", borderRadius: 16, lineHeight: 1, boxShadow: "inset 0 0 0 1px rgb(37 99 235 / 6%)" },
+  metricContent: { flex: 1, minWidth: 0 },
+  metricLabel: { margin: "0 0 6px", color: "#64748b", fontSize: 12, fontWeight: 750, lineHeight: 1.35 },
+  metricValue: { margin: 0, color: "#0f172a", fontSize: 23, fontWeight: 850, lineHeight: 1.18, letterSpacing: "-0.025em", overflowWrap: "anywhere" },
+  metricFoot: { marginTop: 7, color: "#64748b", fontSize: 11, lineHeight: 1.4 },
   label: { display: "grid", gap: 7, color: "#475569", fontSize: 13, fontWeight: 650 },
   input: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#0f172a", font: "inherit", fontWeight: 400 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 },
@@ -90,19 +96,52 @@ function money(value: number): string {
 
 function toDate(value: unknown): Date | null {
   try {
-    if (value instanceof Date && Number.isFinite(value.getTime())) return value;
-    // Firestore Timestamp.toDate() usa la instancia como contexto (this).
-    // Invocarlo separado del objeto puede lanzar un error en tiempo de ejecución.
-    if (value && typeof value === "object" && "toDate" in value) {
-      const fn = (value as { toDate?: unknown }).toDate;
-      if (typeof fn === "function") {
-        const parsed = (fn as () => unknown).call(value);
-        return parsed instanceof Date && Number.isFinite(parsed.getTime()) ? parsed : null;
-      }
+    if (value instanceof Date) {
+      return Number.isFinite(value.getTime()) ? new Date(value.getTime()) : null;
     }
+
     if (typeof value === "string" || typeof value === "number") {
       const parsed = new Date(value);
       return Number.isFinite(parsed.getTime()) ? parsed : null;
+    }
+
+    if (!value || typeof value !== "object") return null;
+
+    // Firestore Timestamp normalmente expone seconds/nanoseconds.
+    // Usarlos evita depender de métodos de instancia como toDate()/toMillis(),
+    // que pueden fallar si el método está separado de su contexto.
+    const timestamp = value as {
+      seconds?: unknown;
+      nanoseconds?: unknown;
+      _seconds?: unknown;
+      _nanoseconds?: unknown;
+      toDate?: unknown;
+      toMillis?: unknown;
+    };
+    const seconds = typeof timestamp.seconds === "number"
+      ? timestamp.seconds
+      : timestamp._seconds;
+    const nanoseconds = typeof timestamp.nanoseconds === "number"
+      ? timestamp.nanoseconds
+      : (typeof timestamp._nanoseconds === "number" ? timestamp._nanoseconds : 0);
+
+    if (typeof seconds === "number" && Number.isFinite(seconds) &&
+        typeof nanoseconds === "number" && Number.isFinite(nanoseconds)) {
+      const parsed = new Date(seconds * 1000 + nanoseconds / 1_000_000);
+      return Number.isFinite(parsed.getTime()) ? parsed : null;
+    }
+
+    // Respaldo para objetos de fecha que no exponen seconds/nanoseconds.
+    if (typeof timestamp.toDate === "function") {
+      const parsed = Reflect.apply(timestamp.toDate, value, []) as unknown;
+      if (parsed instanceof Date && Number.isFinite(parsed.getTime())) return parsed;
+    }
+    if (typeof timestamp.toMillis === "function") {
+      const millis = Reflect.apply(timestamp.toMillis, value, []) as unknown;
+      if (typeof millis === "number" && Number.isFinite(millis)) {
+        const parsed = new Date(millis);
+        return Number.isFinite(parsed.getTime()) ? parsed : null;
+      }
     }
   } catch (error) {
     console.warn("No se pudo interpretar una fecha del Dashboard:", error);
@@ -172,6 +211,74 @@ function createDay(now: Date, daysAgo: number): Date {
 
 function belongsToDate(date: Date | null, expected: Date): boolean {
   return Boolean(date && date.getFullYear() === expected.getFullYear() && date.getMonth() === expected.getMonth() && date.getDate() === expected.getDate());
+}
+
+type MetricIconName = "sales" | "purchases" | "profit" | "cash" | "inventory" | "expenses" | "todaySales" | "todayPurchases" | "todayExpenses" | "credit" | "lowStock";
+
+type MetricCardProps = {
+  icon: MetricIconName;
+  label: string;
+  value: string;
+  foot?: string;
+  iconBackground: string;
+  iconColor: string;
+  valueColor?: string;
+  compact?: boolean;
+};
+
+function MetricGlyph({ name }: { name: MetricIconName }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  let drawing: ReactNode;
+  switch (name) {
+    case "sales":
+    case "todaySales":
+      drawing = <><path d="M3 4h2l2.1 10.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 1.9-1.4L21 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M9 11h9M13.5 7.5v7"/></>;
+      break;
+    case "purchases":
+    case "todayPurchases":
+      drawing = <><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 11h7M9 15h7M9 18h4"/></>;
+      break;
+    case "profit":
+      drawing = <><path d="M4 20h16M6 16l4-5 3 2 5-7"/><path d="M14 6h4v4"/><circle cx="7" cy="7" r="2"/></>;
+      break;
+    case "cash":
+      drawing = <><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M7 6V4h10v2M3 10h18M12 9v7"/><circle cx="12" cy="13" r="2.3"/></>;
+      break;
+    case "inventory":
+      drawing = <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9"/></>;
+      break;
+    case "expenses":
+    case "todayExpenses":
+      drawing = <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M8 11h8M8 15h8M8 18h5"/></>;
+      break;
+    case "credit":
+      drawing = <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2M7 3.8 5.2 5.6M17 3.8l1.8 1.8"/></>;
+      break;
+    case "lowStock":
+      drawing = <><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></>;
+      break;
+  }
+  return <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" {...common}>{drawing}</svg>;
+}
+
+function MetricCard({ icon, label, value, foot, iconBackground, iconColor, valueColor, compact = false }: MetricCardProps) {
+  return (
+    <article style={styles.metricCard}>
+      <span
+        aria-hidden="true"
+        style={{ ...styles.metricIcon, background: iconBackground, color: iconColor }}
+      >
+        <MetricGlyph name={icon} />
+      </span>
+      <div style={styles.metricContent}>
+        <div style={styles.metricLabel}>{label}</div>
+        <h2 style={{ ...styles.metricValue, ...(compact ? { fontSize: 18 } : {}), ...(valueColor ? { color: valueColor } : {}) }}>
+          {value}
+        </h2>
+        {foot && <div style={styles.metricFoot}>{foot}</div>}
+      </div>
+    </article>
+  );
 }
 
 export default function DashboardPage() {
@@ -428,63 +535,67 @@ export default function DashboardPage() {
         {error && <div role="alert" style={styles.error}>{error}</div>}
         {loadingData && <div style={styles.notice}>Actualizando indicadores…</div>}
 
-        <section style={styles.grid}>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Ventas del período</div>
-            <h2 style={styles.cardValue}>{money(totalSales)}</h2>
-            <div style={styles.cardFoot}>{periodSales.length} ventas activas</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Compras del período</div>
-            <h2 style={styles.cardValue}>{money(totalPurchases)}</h2>
-            <div style={styles.cardFoot}>{periodPurchases.length} compras activas</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Utilidad bruta estimada</div>
-            <h2 style={{ ...styles.cardValue, color: grossProfitSummary.value < 0 ? "#b91c1c" : "#047857" }}>{money(grossProfitSummary.value)}</h2>
-            <div style={styles.cardFoot}>{grossProfitSummary.incomplete ? "Parcial: faltan costos históricos en una o más ventas." : "Ventas menos costo histórico registrado en las líneas."}</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Saldo neto de caja del período</div>
-            <h2 style={styles.cardValue}>{money(totalIncome - totalCashOut)}</h2>
-            <div style={styles.cardFoot}>{money(totalIncome)} ingresos · {money(totalCashOut)} egresos</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Inventario estimado actual</div>
-            <h2 style={styles.cardValue}>{money(stockValue)}</h2>
-            <div style={styles.cardFoot}>{products.length} productos activos · al costo de compra actual</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Gastos pagados / pendientes</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 20 }}>{canViewExpenses ? `${money(paidExpenses)} / ${money(pendingExpenses)}` : "Sin permiso"}</h2>
-            <div style={styles.cardFoot}>{canViewExpenses ? `${periodExpenses.length} gastos activos en el período` : "Tu rol no tiene acceso al detalle de gastos."}</div>
-          </article>
+        <section style={styles.grid} aria-label="Indicadores financieros principales">
+          <MetricCard
+            icon="sales" label="Ventas del período" value={money(totalSales)}
+            foot={`${periodSales.length} ventas activas`}
+            iconBackground="#dbeafe" iconColor="#1d4ed8"
+          />
+          <MetricCard
+            icon="purchases" label="Compras del período" value={money(totalPurchases)}
+            foot={`${periodPurchases.length} compras activas`}
+            iconBackground="#ccfbf1" iconColor="#0f766e"
+          />
+          <MetricCard
+            icon="profit" label="Utilidad bruta estimada" value={money(grossProfitSummary.value)}
+            foot={grossProfitSummary.incomplete ? "Parcial: faltan costos históricos en una o más ventas." : "Ventas menos costo histórico por línea."}
+            iconBackground="#fef3c7" iconColor="#b45309"
+            valueColor={grossProfitSummary.value < 0 ? "#b91c1c" : "#047857"}
+          />
+          <MetricCard
+            icon="cash" label="Saldo neto de caja" value={money(totalIncome - totalCashOut)}
+            foot={`${money(totalIncome)} de ingresos · ${money(totalCashOut)} de egresos`}
+            iconBackground="#dcfce7" iconColor="#15803d"
+          />
+          <MetricCard
+            icon="inventory" label="Inventario estimado actual" value={money(stockValue)}
+            foot={`${products.length} productos · valorados al costo actual`}
+            iconBackground="#e0e7ff" iconColor="#4338ca"
+          />
+          <MetricCard
+            icon="expenses" label="Gastos pagados / pendientes"
+            value={canViewExpenses ? `${money(paidExpenses)} / ${money(pendingExpenses)}` : "Sin permiso"}
+            foot={canViewExpenses ? `${periodExpenses.length} gastos activos en el período` : "Tu rol no tiene acceso al detalle de gastos."}
+            iconBackground="#fee2e2" iconColor="#b91c1c" compact
+          />
         </section>
 
-        <section style={styles.grid}>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Ventas de hoy</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 21 }}>{money(todaySales)}</h2>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Compras de hoy</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 21 }}>{money(todayPurchases)}</h2>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Gastos registrados hoy</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 21 }}>{canViewExpenses ? money(todayExpenses) : "Sin permiso"}</h2>
-            <div style={styles.cardFoot}>{canViewExpenses ? `${activeExpenses.filter((record) => belongsToDate(toDate(record.data.expenseDate) ?? recordDate(record), today)).length} gastos activos` : "Tu rol no tiene acceso al detalle de gastos."}</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Crédito pendiente</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 21 }}>{money(overdueCredit)}</h2>
-            <div style={styles.cardFoot}>Ventas activas con pago pendiente</div>
-          </article>
-          <article style={styles.panel}>
-            <div style={styles.cardLabel}>Productos con stock bajo</div>
-            <h2 style={{ ...styles.cardValue, fontSize: 21, color: lowStockProducts.length ? "#b45309" : "#047857" }}>{lowStockProducts.length}</h2>
-            <div style={styles.cardFoot}>De los productos activos consultados</div>
-          </article>
+        <section style={styles.grid} aria-label="Indicadores operativos de hoy">
+          <MetricCard
+            icon="todaySales" label="Ventas de hoy" value={money(todaySales)}
+            iconBackground="#dbeafe" iconColor="#1d4ed8"
+          />
+          <MetricCard
+            icon="todayPurchases" label="Compras de hoy" value={money(todayPurchases)}
+            iconBackground="#ccfbf1" iconColor="#0f766e"
+          />
+          <MetricCard
+            icon="todayExpenses" label="Gastos registrados hoy" value={canViewExpenses ? money(todayExpenses) : "Sin permiso"}
+            foot={canViewExpenses ? `${activeExpenses.filter((record) => belongsToDate(toDate(record.data.expenseDate) ?? recordDate(record), today)).length} gastos activos` : "Sin acceso al detalle de gastos."}
+            iconBackground="#fef3c7" iconColor="#b45309" compact
+          />
+          <MetricCard
+            icon="credit" label="Crédito pendiente" value={money(overdueCredit)}
+            foot="Ventas activas con pago pendiente"
+            iconBackground="#ffedd5" iconColor="#c2410c"
+          />
+          <MetricCard
+            icon="lowStock" label="Productos con stock bajo" value={String(lowStockProducts.length)}
+            foot="Productos en mínimo o por debajo"
+            iconBackground={lowStockProducts.length ? "#fef3c7" : "#dcfce7"}
+            iconColor={lowStockProducts.length ? "#b45309" : "#15803d"}
+            valueColor={lowStockProducts.length ? "#b45309" : "#047857"}
+          />
         </section>
 
         <section style={styles.grid}>

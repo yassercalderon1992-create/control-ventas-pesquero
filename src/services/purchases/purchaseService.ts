@@ -20,6 +20,7 @@ interface PreparedPurchaseItem {
   unitPrice: number;
   lineTotal: number;
   previousStock: number;
+  previousCost: number;
   newStock: number;
   averageCost: number;
   salePrice: number;
@@ -236,6 +237,7 @@ export class PurchaseService {
           unitPrice: item.unitPrice,
           lineTotal,
           previousStock,
+          previousCost: currentCost,
           newStock,
           averageCost,
           salePrice:
@@ -328,6 +330,7 @@ export class PurchaseService {
           stockBefore: item.previousStock,
           stockAfter: item.newStock,
           averageCostAfter: item.averageCost,
+          purchaseCostBefore: item.previousCost,
           lineTotal: item.lineTotal,
           referenceType: "PURCHASE",
         });
@@ -344,6 +347,7 @@ export class PurchaseService {
           referenceType: "PURCHASE",
           referenceId: purchaseRef.id,
           createdBy: actorEmail,
+          createdByUid: currentUser.uid,
           createdAt: serverTimestamp(),
           status: "ACTIVE",
           invoiceNumber:

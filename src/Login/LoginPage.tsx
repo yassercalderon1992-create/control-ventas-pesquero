@@ -5,10 +5,17 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <div className="login-card">
-
-        <div className="logo">
-          🐟
-        </div>
+        <img
+          src="/erp-pesquero-icon.png"
+          alt="Logo de ERP Pesquero Honduras"
+          style={{
+            display: "block",
+            width: "84px",
+            height: "84px",
+            objectFit: "contain",
+            margin: "0 auto 20px",
+          }}
+        />
 
         <h1>ERP Pesquero Honduras</h1>
 
@@ -17,7 +24,6 @@ export default function LoginPage() {
         </p>
 
         <LoginForm />
-
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 
 import MainLayout from "../layout/MainLayout";
+import { auth } from "../firebase/auth";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase/firestore";
 import { hasPermission } from "../models/permissions";
@@ -14,7 +15,7 @@ import {
 
 type PaymentMethod = "CASH" | "TRANSFER" | "CARD" | "OTHER";
 type CashType = "INCOME" | "EXPENSE";
-type Tab = "summary" | "cash" | "expenses";
+type Tab = "summary" | "cash" | "expenses" | "closings";
 type DataMap = Record<string, unknown>;
 
 interface AssociationOption {
@@ -23,6 +24,13 @@ interface AssociationOption {
 }
 
 interface FinanceRecord {
+  id: string;
+  associationId: string;
+  associationName: string;
+  data: DataMap;
+}
+
+interface CashClosingRecord {
   id: string;
   associationId: string;
   associationName: string;
@@ -59,22 +67,23 @@ const styles: Record<string, CSSProperties> = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 },
   title: { margin: 0, fontSize: 28, fontWeight: 750 },
   muted: { color: "#64748b", lineHeight: 1.5, margin: "7px 0 0" },
-  panel: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 20, minWidth: 0 },
+  panel: { background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#e2e8f0", borderRadius: 10, padding: 20, minWidth: 0 },
   label: { display: "grid", gap: 7, color: "#475569", fontSize: 13, fontWeight: 650 },
-  input: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "11px 12px", border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#0f172a", font: "inherit", fontWeight: 400 },
+  input: { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "11px 12px", borderWidth: 1, borderStyle: "solid", borderColor: "#cbd5e1", borderRadius: 7, background: "#fff", color: "#0f172a", font: "inherit", fontWeight: 400 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 },
   row: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
-  primary: { border: 0, borderRadius: 7, background: "#2563eb", color: "#fff", padding: "11px 15px", fontWeight: 700, cursor: "pointer" },
-  secondary: { border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "10px 13px", fontWeight: 650, cursor: "pointer" },
-  tab: { border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "10px 14px", fontWeight: 700, cursor: "pointer" },
+  primary: { borderWidth: 0, borderStyle: "solid", borderColor: "transparent", borderRadius: 7, background: "#2563eb", color: "#fff", padding: "11px 15px", fontWeight: 700, cursor: "pointer" },
+  secondary: { borderWidth: 1, borderStyle: "solid", borderColor: "#cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "10px 13px", fontWeight: 650, cursor: "pointer" },
+  tab: { borderWidth: 1, borderStyle: "solid", borderColor: "#cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "10px 14px", fontWeight: 700, cursor: "pointer" },
   activeTab: { borderColor: "#1d4ed8", background: "#1d4ed8", color: "#fff" },
   tableWrap: { overflowX: "auto", width: "100%" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 750 },
   th: { textAlign: "left", background: "#f8fafc", color: "#475569", padding: "12px 10px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
   td: { padding: "12px 10px", borderBottom: "1px solid #e2e8f0", verticalAlign: "top" },
-  notice: { padding: 12, borderRadius: 8, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", lineHeight: 1.5 },
-  error: { padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", lineHeight: 1.5 },
-  success: { padding: 12, borderRadius: 8, background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", lineHeight: 1.5 },
+  notice: { padding: 12, borderRadius: 8, background: "#eff6ff", color: "#1d4ed8", borderWidth: 1, borderStyle: "solid", borderColor: "#bfdbfe", lineHeight: 1.5 },
+  error: { padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c", borderWidth: 1, borderStyle: "solid", borderColor: "#fecaca", lineHeight: 1.5 },
+  success: { padding: 12, borderRadius: 8, background: "#f0fdf4", color: "#166534", borderWidth: 1, borderStyle: "solid", borderColor: "#bbf7d0", lineHeight: 1.5 },
+  tag: { display: "inline-block", padding: "4px 9px", borderRadius: 999, background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 750 },
 };
 
 function textValue(value: unknown, fallback = "—"): string {
@@ -113,6 +122,26 @@ function isActive(value: unknown): boolean {
   return status !== "CANCELLED" && status !== "CANCELED" && status !== "INACTIVE";
 }
 
+// Un documento heredado o de prueba sin campos financieros válidos se conserva
+// en el historial, pero no se suma como gasto activo ni se presenta como válido.
+function hasRequiredExpenseFields(record: FinanceRecord): boolean {
+  const data = record.data;
+  const amount = numberValue(data.amount);
+  const paymentStatus = textValue(data.paymentStatus, "").toUpperCase();
+  const category = textValue(data.category, "");
+  const description = textValue(data.description, "");
+  const expenseDate = dateValue(data.expenseDate ?? data.createdAt);
+
+  return Boolean(
+    category &&
+    description &&
+    Number.isFinite(amount) &&
+    amount > 0 &&
+    (paymentStatus === "PAID" || paymentStatus === "PENDING") &&
+    expenseDate
+  );
+}
+
 function localDateInput(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
@@ -123,8 +152,11 @@ export default function CashExpensesPage() {
   const { user, loading: authLoading } = useAuth();
   const isGlobalAdmin = Boolean(user && user.active && user.role === "Administrador" && user.associationId.trim().toLowerCase() === "todas");
   const canRegisterCash = Boolean(user && user.active && hasPermission(user.role, "cash:register"));
-  const canViewExpenses = Boolean(user && user.active && hasPermission(user.role, "expenses:view"));
-  const canCreateExpense = Boolean(user && user.active && hasPermission(user.role, "expenses:create"));
+  // El responsable de caja puede cerrar su propio corte si es Administrador o Vendedor.
+  // Esto no amplía el permiso para registrar ingresos/egresos manuales.
+  const canCloseCash = Boolean(user && user.active && (user.role === "Administrador" || user.role === "Vendedor"));
+  const canViewExpenses = Boolean(user && user.active && (user.role === "Vendedor" || hasPermission(user.role, "expenses:view")));
+  const canCreateExpense = Boolean(user && user.active && (user.role === "Vendedor" || hasPermission(user.role, "expenses:create")));
   const canCancelExpense = Boolean(user && user.active && hasPermission(user.role, "expenses:cancel"));
 
   const [tab, setTab] = useState<Tab>("summary");
@@ -132,6 +164,8 @@ export default function CashExpensesPage() {
   const [associationId, setAssociationId] = useState("");
   const [cashRecords, setCashRecords] = useState<FinanceRecord[]>([]);
   const [expenseRecords, setExpenseRecords] = useState<FinanceRecord[]>([]);
+  const [cashClosings, setCashClosings] = useState<CashClosingRecord[]>([]);
+  const [cashClosingsWarning, setCashClosingsWarning] = useState("");
   const [loadingAssociations, setLoadingAssociations] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -144,6 +178,12 @@ export default function CashExpensesPage() {
   const [cashMethod, setCashMethod] = useState<PaymentMethod>("CASH");
   const [cashConcept, setCashConcept] = useState("");
   const [cashNotes, setCashNotes] = useState("");
+
+  const [closingShift, setClosingShift] = useState("Turno 1");
+  const [openingBalance, setOpeningBalance] = useState("0");
+  const [openingNotes, setOpeningNotes] = useState("");
+  const [countedCash, setCountedCash] = useState("");
+  const [closingNotes, setClosingNotes] = useState("");
 
   const [expenseCategory, setExpenseCategory] = useState("Operativo");
   const [expenseDescription, setExpenseDescription] = useState("");
@@ -209,6 +249,8 @@ export default function CashExpensesPage() {
       const selected = associationId === ALL_ASSOCIATIONS ? associations : associations.filter((item) => item.id === associationId);
       const collectedCash: FinanceRecord[] = [];
       const collectedExpenses: FinanceRecord[] = [];
+      const collectedClosings: CashClosingRecord[] = [];
+      let closingReadFailed = false;
       for (const association of selected) {
         const cashRef = collection(db, "associations", association.id, "cashMovements");
         const cashSnapshot = await getDocs(cashRef);
@@ -219,11 +261,40 @@ export default function CashExpensesPage() {
           const expensesSnapshot = await getDocs(expensesRef);
           collectedExpenses.push(...expensesSnapshot.docs.map((document) => ({ id: document.id, associationId: association.id, associationName: association.name, data: document.data() })));
         }
+
+        // El historial de cortes se consulta por separado para que una regla
+        // todavía no publicada no interrumpa el módulo anterior de Caja/Gastos.
+        try {
+          const closingsRef = collection(db, "associations", association.id, "cashClosings");
+          // El administrador consulta todas las cajas de la asociación.
+          // Los demás roles solo consultan cajas cuyo responsable sea su propio correo.
+          const closingQuery = user?.role === "Administrador"
+            ? closingsRef
+            : query(
+                closingsRef,
+                where("responsibleEmail", "==", (user?.email ?? "").trim().toLowerCase())
+              );
+          const closingsSnapshot = await getDocs(closingQuery);
+          collectedClosings.push(...closingsSnapshot.docs.map((document) => ({
+            id: document.id,
+            associationId: association.id,
+            associationName: association.name,
+            data: document.data(),
+          })));
+        } catch (closingReadError: unknown) {
+          closingReadFailed = true;
+          console.warn("No se pudieron leer los cortes de caja:", closingReadError);
+        }
       }
       collectedCash.sort((a, b) => (dateValue(b.data.createdAt ?? b.data.date)?.getTime() ?? 0) - (dateValue(a.data.createdAt ?? a.data.date)?.getTime() ?? 0));
       collectedExpenses.sort((a, b) => (dateValue(b.data.expenseDate ?? b.data.createdAt)?.getTime() ?? 0) - (dateValue(a.data.expenseDate ?? a.data.createdAt)?.getTime() ?? 0));
+      collectedClosings.sort((a, b) => (dateValue(b.data.periodEndAt ?? b.data.closedAt ?? b.data.createdAt)?.getTime() ?? 0) - (dateValue(a.data.periodEndAt ?? a.data.closedAt ?? a.data.createdAt)?.getTime() ?? 0));
       setCashRecords(collectedCash);
       setExpenseRecords(collectedExpenses);
+      setCashClosings(collectedClosings);
+      setCashClosingsWarning(closingReadFailed
+        ? "No se pudo leer el historial de cortes. Para calcular el siguiente turno sin solapamientos, primero hay que habilitar la lectura de la subcolección cashClosings en las reglas de Firestore."
+        : "");
     } catch (loadError: unknown) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron consultar los movimientos de caja y gastos.");
     } finally {
@@ -248,11 +319,221 @@ export default function CashExpensesPage() {
   const activeCash = cashRecords.filter((record) => isActive(record.data.status));
   const totalIncome = activeCash.filter((record) => textValue(record.data.type).toUpperCase() === "INCOME").reduce((sum, record) => sum + numberValue(record.data.amount), 0);
   const totalCashExpense = activeCash.filter((record) => textValue(record.data.type).toUpperCase() === "EXPENSE").reduce((sum, record) => sum + numberValue(record.data.amount), 0);
-  const activeExpenses = expenseRecords.filter((record) => isActive(record.data.status));
+  const activeExpenseRecords = expenseRecords.filter((record) => isActive(record.data.status));
+  const activeExpenses = activeExpenseRecords.filter(hasRequiredExpenseFields);
+  const incompleteActiveExpenses = activeExpenseRecords.filter((record) => !hasRequiredExpenseFields(record));
   const paidExpenseTotal = activeExpenses.filter((record) => textValue(record.data.paymentStatus).toUpperCase() === "PAID").reduce((sum, record) => sum + numberValue(record.data.amount), 0);
   const pendingExpenseTotal = activeExpenses.filter((record) => textValue(record.data.paymentStatus).toUpperCase() === "PENDING").reduce((sum, record) => sum + numberValue(record.data.amount), 0);
   const selectedAssociation = associations.find((association) => association.id === associationId);
   const currentAssociationName = selectedAssociation?.name ?? (associationId === ALL_ASSOCIATIONS ? "Todas las empresas" : "");
+
+  const selectedCashClosings = cashClosings
+    .filter((record) => associationId === ALL_ASSOCIATIONS || record.associationId === associationId)
+    .sort((a, b) => (dateValue(b.data.periodEndAt ?? b.data.closedAt ?? b.data.openedAt ?? b.data.createdAt)?.getTime() ?? 0) - (dateValue(a.data.periodEndAt ?? a.data.closedAt ?? a.data.openedAt ?? a.data.createdAt)?.getTime() ?? 0));
+  // Cada responsable administra su propia caja abierta; el historial de la asociación
+  // muestra cajas abiertas y cerradas sin permitir reescribir cierres históricos.
+  const currentResponsibleClosings = selectedCashClosings.filter((record) =>
+    textValue(record.data.responsibleEmail ?? record.data.createdBy, "").trim().toLowerCase() === (user?.email ?? "").trim().toLowerCase()
+  );
+  const activeCashRegister = associationId !== ALL_ASSOCIATIONS
+    ? currentResponsibleClosings.find((record) => textValue(record.data.status).toUpperCase() === "OPEN")
+    : undefined;
+  const latestCashClosing = associationId !== ALL_ASSOCIATIONS
+    ? currentResponsibleClosings.find((record) => textValue(record.data.status).toUpperCase() === "CLOSED")
+    : undefined;
+  const latestClosingEnd = latestCashClosing ? dateValue(latestCashClosing.data.periodEndAt) : null;
+  const closingPeriodStart = activeCashRegister
+    ? dateValue(activeCashRegister.data.periodStartAt)
+    : (latestClosingEnd ?? (() => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return start;
+    })());
+  const closingCalculationEnd = new Date();
+  const cashMovementsInClosingWindow = activeCash.filter((record) => {
+    if (record.associationId !== associationId || associationId === ALL_ASSOCIATIONS || !closingPeriodStart) return false;
+    const method = textValue(record.data.paymentMethod, "").toUpperCase();
+    if (method !== "CASH") return false;
+    const movementDate = dateValue(record.data.createdAt ?? record.data.date);
+    return Boolean(movementDate && movementDate.getTime() > closingPeriodStart.getTime() && movementDate.getTime() <= closingCalculationEnd.getTime());
+  });
+  const cashMovementsMissingResponsible = cashMovementsInClosingWindow.filter((record) =>
+    !textValue(record.data.createdBy ?? record.data.createdByEmail ?? record.data.actorEmail ?? record.data.userEmail, "").trim()
+  );
+  const cashMovementsInClosingPeriod = cashMovementsInClosingWindow.filter((record) => {
+    // No mezclar cobros o pagos de otro responsable en esta caja individual.
+    const movementResponsible = textValue(
+      record.data.createdBy ?? record.data.createdByEmail ?? record.data.actorEmail ?? record.data.userEmail,
+      ""
+    ).trim().toLowerCase();
+    return Boolean(user?.email && movementResponsible === user.email.trim().toLowerCase());
+  });
+  const closingCashIncome = cashMovementsInClosingPeriod
+    .filter((record) => textValue(record.data.type).toUpperCase() === "INCOME")
+    .reduce((sum, record) => sum + numberValue(record.data.amount), 0);
+  const closingCashExpense = cashMovementsInClosingPeriod
+    .filter((record) => textValue(record.data.type).toUpperCase() === "EXPENSE")
+    .reduce((sum, record) => sum + numberValue(record.data.amount), 0);
+  const openingBalanceValue = activeCashRegister
+    ? numberValue(activeCashRegister.data.openingBalance)
+    : Number(openingBalance);
+  const closingExpectedCash = (Number.isFinite(openingBalanceValue) ? openingBalanceValue : 0) + closingCashIncome - closingCashExpense;
+  const countedCashValue = Number(countedCash);
+  const closingDifference = Math.round((((Number.isFinite(countedCashValue) ? countedCashValue : 0) - closingExpectedCash) + Number.EPSILON) * 100) / 100;
+
+  useEffect(() => {
+    // El saldo inicial sugerido proviene del efectivo contado en la última caja cerrada
+    // por este responsable. Una caja abierta conserva su propio saldo inicial.
+    if (associationId === ALL_ASSOCIATIONS || !associationId) return;
+    if (activeCashRegister) {
+      setOpeningBalance(String(numberValue(activeCashRegister.data.openingBalance)));
+      setClosingShift(textValue(activeCashRegister.data.shiftLabel, "Turno 1"));
+      setOpeningNotes(textValue(activeCashRegister.data.openingNotes, ""));
+      setCountedCash("");
+      setClosingNotes("");
+      return;
+    }
+    setOpeningBalance(latestCashClosing ? String(numberValue(latestCashClosing.data.countedCash)) : "0");
+    setClosingShift("Turno 1");
+    setOpeningNotes("");
+    setCountedCash("");
+    setClosingNotes("");
+  }, [associationId, activeCashRegister?.id, latestCashClosing?.id]);
+
+  const handleCashRegisterOpenSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    if (!user?.active || !canCloseCash) {
+      setError("Tu perfil no tiene permiso para abrir una caja.");
+      return;
+    }
+    if (!selectedAssociation || associationId === ALL_ASSOCIATIONS) {
+      setError("Selecciona una asociación específica antes de abrir la caja.");
+      return;
+    }
+    if (cashClosingsWarning) {
+      setError("No se puede abrir caja de forma segura hasta habilitar las reglas de Firestore para cashClosings.");
+      return;
+    }
+    if (activeCashRegister) {
+      setError("Ya tienes una caja abierta. Ciérrala antes de abrir otra.");
+      return;
+    }
+    const opening = Number(openingBalance);
+    if (!Number.isFinite(opening) || opening < 0 || openingBalance.trim() === "") {
+      setError("Indica un saldo inicial válido, igual o mayor que cero.");
+      return;
+    }
+    if (!closingShift.trim()) {
+      setError("Escribe un nombre para identificar la caja o el turno.");
+      return;
+    }
+    const currentAuthUser = auth.currentUser;
+    if (!currentAuthUser?.uid || !currentAuthUser.email) {
+      setError("No se pudo identificar la cuenta autenticada. Cierra y vuelve a iniciar sesión antes de abrir la caja.");
+      return;
+    }
+    const responsibleEmail = currentAuthUser.email.trim().toLowerCase();
+
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "associations", selectedAssociation.id, "cashClosings"), {
+        associationId: selectedAssociation.id,
+        associationName: selectedAssociation.name,
+        type: "CASH_REGISTER",
+        status: "OPEN",
+        shiftLabel: closingShift.trim(),
+        periodStartAt: serverTimestamp(),
+        openingBalance: opening,
+        responsibleEmail,
+        createdBy: responsibleEmail,
+        createdByUid: currentAuthUser.uid,
+        createdAt: serverTimestamp(),
+        openedAt: serverTimestamp(),
+        openingNotes: openingNotes.trim(),
+      });
+      setNotice(`Caja «${closingShift.trim()}» abierta con saldo inicial de ${money(opening)}. Ya puedes trabajar y luego realizar el cierre.`);
+      setCountedCash("");
+      setClosingNotes("");
+      await loadData();
+    } catch (saveError: unknown) {
+      const message = saveError instanceof Error ? saveError.message : "No se pudo abrir la caja.";
+      setError(message.includes("permission-denied") || message.toLowerCase().includes("missing or insufficient permissions")
+        ? "Firebase rechazó la apertura porque las reglas de cashClosings todavía no permiten crear cajas abiertas. Revisa el bloque de reglas actualizado incluido en el paquete."
+        : message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCashClosingSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    if (!user?.active || !canCloseCash) {
+      setError("Tu perfil no tiene permiso para cerrar caja.");
+      return;
+    }
+    if (!selectedAssociation || associationId === ALL_ASSOCIATIONS) {
+      setError("Selecciona una asociación específica antes de hacer el corte.");
+      return;
+    }
+    if (!activeCashRegister) {
+      setError("Primero debes abrir una caja antes de poder cerrarla.");
+      return;
+    }
+    if (cashClosingsWarning) {
+      setError("No se puede cerrar caja de forma segura mientras no esté disponible el historial de cajas. Habilita primero las reglas de Firestore para cashClosings.");
+      return;
+    }
+    if (cashMovementsMissingResponsible.length > 0) {
+      setError(`Hay ${cashMovementsMissingResponsible.length} movimiento(s) en efectivo del período sin responsable identificado. Por seguridad, revisa esos registros antes de cerrar la caja.`);
+      return;
+    }
+    const startAt = dateValue(activeCashRegister.data.periodStartAt);
+    const counted = Number(countedCash);
+    const endAt = new Date();
+    if (!startAt || startAt.getTime() >= endAt.getTime()) {
+      setError("La fecha inicial de esta caja no es válida. Actualiza los datos y vuelve a intentarlo.");
+      return;
+    }
+    if (!Number.isFinite(counted) || counted < 0 || countedCash.trim() === "") {
+      setError("Indica el efectivo contado físicamente, igual o mayor que cero.");
+      return;
+    }
+    const opening = numberValue(activeCashRegister.data.openingBalance);
+    const expected = opening + closingCashIncome - closingCashExpense;
+    const difference = Math.round((counted - expected + Number.EPSILON) * 100) / 100;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "associations", selectedAssociation.id, "cashClosings", activeCashRegister.id), {
+        status: "CLOSED",
+        periodEndAt: serverTimestamp(),
+        cashIncome: closingCashIncome,
+        cashExpense: closingCashExpense,
+        cashIncomeMovementCount: cashMovementsInClosingPeriod.filter((record) => textValue(record.data.type).toUpperCase() === "INCOME").length,
+        cashExpenseMovementCount: cashMovementsInClosingPeriod.filter((record) => textValue(record.data.type).toUpperCase() === "EXPENSE").length,
+        expectedCash: expected,
+        countedCash: counted,
+        difference,
+        closedAt: serverTimestamp(),
+        closingNotes: closingNotes.trim(),
+      });
+      setCountedCash("");
+      setClosingNotes("");
+      setOpeningNotes("");
+      setNotice(`Caja «${textValue(activeCashRegister.data.shiftLabel)}» cerrada. Efectivo esperado: ${money(expected)}; contado: ${money(counted)}; diferencia: ${money(difference)}. El cierre quedó guardado en el historial.`);
+      await loadData();
+    } catch (saveError: unknown) {
+      const message = saveError instanceof Error ? saveError.message : "No se pudo cerrar la caja.";
+      setError(message.includes("permission-denied") || message.toLowerCase().includes("missing or insufficient permissions")
+        ? "Firebase rechazó el cierre. Comprueba que las reglas de cashClosings permitan al responsable cerrar únicamente su propia caja abierta. No se confirmó el cierre."
+        : message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleCashSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -409,12 +690,12 @@ export default function CashExpensesPage() {
           <div style={styles.panel}><div style={styles.muted}>Ingresos de caja activos</div><h2>{money(totalIncome)}</h2><small>{activeCash.filter((record) => textValue(record.data.type).toUpperCase() === "INCOME").length} movimientos</small></div>
           <div style={styles.panel}><div style={styles.muted}>Egresos de caja activos</div><h2>{money(totalCashExpense)}</h2><small>{activeCash.filter((record) => textValue(record.data.type).toUpperCase() === "EXPENSE").length} movimientos</small></div>
           <div style={styles.panel}><div style={styles.muted}>Saldo neto de caja</div><h2>{money(totalIncome - totalCashExpense)}</h2><small>Ingresos menos egresos activos</small></div>
-          <div style={styles.panel}><div style={styles.muted}>Gastos pagados / pendientes</div><h2>{money(paidExpenseTotal)} / {money(pendingExpenseTotal)}</h2><small>{activeExpenses.length} gastos activos</small></div>
+          <div style={styles.panel}><div style={styles.muted}>Gastos pagados / pendientes</div><h2>{money(paidExpenseTotal)} / {money(pendingExpenseTotal)}</h2><small>{activeExpenses.length} gastos válidos activos{incompleteActiveExpenses.length > 0 ? ` · ${incompleteActiveExpenses.length} registro(s) incompleto(s)` : ""}</small></div>
         </section>
 
         <section style={styles.panel}>
           <nav style={styles.row} aria-label="Secciones de caja y gastos">
-            {([ ["summary", "Resumen"], ["cash", "Movimientos de caja"], ["expenses", "Gastos"] ] as [Tab, string][]).map(([key, label]) => (
+            {([ ["summary", "Resumen"], ["cash", "Movimientos de caja"], ["expenses", "Gastos"], ["closings", "Cortes de caja"] ] as [Tab, string][]).map(([key, label]) => (
               <button key={key} type="button" style={{ ...styles.tab, ...(tab === key ? styles.activeTab : {}) }} onClick={() => { setTab(key); setSearch(""); }}>{label}</button>
             ))}
           </nav>
@@ -479,7 +760,7 @@ export default function CashExpensesPage() {
                   <p style={styles.muted}>Los gastos pagados generan su movimiento de caja automáticamente. Los pendientes se registran sin afectar el saldo hasta que exista un flujo de pago autorizado.</p>
                   <div style={styles.grid}>
                     <label style={styles.label}>Categoría
-                      <select style={styles.input} value={expenseCategory} onChange={(event) => setExpenseCategory(event.target.value)}><option>Operativo</option><option>Transporte</option><option>Combustible</option><option>Servicios</option><option>Mantenimiento</option><option>Personal</option><option>Alquiler</option><option>Impuestos</option><option>Otro</option></select>
+                      <select style={styles.input} value={expenseCategory} onChange={(event) => setExpenseCategory(event.target.value)}><option>Operativo</option><option>Energía eléctrica / ENEE</option><option>Agua</option><option>Internet</option><option>Telefonía</option><option>Servicios públicos</option><option>Transporte</option><option>Combustible</option><option>Hielo</option><option>Alimentación</option><option>Mantenimiento</option><option>Personal</option><option>Alquiler</option><option>Impuestos</option><option>Aseo y recolección</option><option>Otro</option></select>
                     </label>
                     <label style={styles.label}>Descripción
                       <input style={styles.input} required value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} placeholder="¿En qué se gastó?" />
@@ -512,17 +793,123 @@ export default function CashExpensesPage() {
               )}
               {!canViewExpenses && <div style={styles.notice}>Tu rol no tiene permiso para consultar los gastos.</div>}
               {canViewExpenses && <>
+                {incompleteActiveExpenses.length > 0 && <div role="status" style={styles.notice}>Se encontraron {incompleteActiveExpenses.length} registro(s) de gasto incompleto(s). Se conservan en el historial, pero no se incluyen en los totales financieros hasta revisar sus datos. No se ha eliminado ni modificado ningún registro.</div>}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
                   <h2 style={{ margin: 0, fontSize: 20 }}>Historial de gastos</h2>
                   <input style={{ ...styles.input, maxWidth: 330 }} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar categoría, descripción o proveedor…" />
                 </div>
                 <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.th}>Fecha</th><th style={styles.th}>Empresa</th><th style={styles.th}>Categoría</th><th style={styles.th}>Descripción</th><th style={styles.th}>Proveedor / factura</th><th style={styles.th}>Pago</th><th style={styles.th}>Importe</th><th style={styles.th}>Estado</th><th style={styles.th}>Acción</th></tr></thead><tbody>
-                  {visibleExpenses.map((record) => <tr key={`${record.associationId}-${record.id}`}><td style={styles.td}>{dateLabel(record.data.expenseDate ?? record.data.createdAt)}</td><td style={styles.td}>{record.associationName}</td><td style={styles.td}>{textValue(record.data.category)}</td><td style={styles.td}>{textValue(record.data.description)}{record.data.notes ? <div style={styles.muted}>{textValue(record.data.notes, "")}</div> : null}</td><td style={styles.td}>{textValue(record.data.supplier)}<div style={styles.muted}>{textValue(record.data.invoiceNumber, "")}</div></td><td style={styles.td}>{textValue(record.data.paymentStatus)}</td><td style={{ ...styles.td, fontWeight: 700 }}>{money(numberValue(record.data.amount))}</td><td style={styles.td}>{isActive(record.data.status) ? "Activo" : "Cancelado"}</td><td style={styles.td}>{canCancelExpense && isActive(record.data.status) ? <button type="button" style={styles.secondary} disabled={saving} onClick={() => void handleCancelExpense(record)}>Cancelar</button> : "—"}</td></tr>)}
+                  {visibleExpenses.map((record) => <tr key={`${record.associationId}-${record.id}`}><td style={styles.td}>{dateLabel(record.data.expenseDate ?? record.data.createdAt)}</td><td style={styles.td}>{record.associationName}</td><td style={styles.td}>{textValue(record.data.category)}</td><td style={styles.td}>{textValue(record.data.description)}{record.data.notes ? <div style={styles.muted}>{textValue(record.data.notes, "")}</div> : null}</td><td style={styles.td}>{textValue(record.data.supplier)}<div style={styles.muted}>{textValue(record.data.invoiceNumber, "")}</div></td><td style={styles.td}>{textValue(record.data.paymentStatus)}</td><td style={{ ...styles.td, fontWeight: 700 }}>{money(numberValue(record.data.amount))}</td><td style={styles.td}>{!hasRequiredExpenseFields(record) ? <span title="Faltan categoría, descripción, fecha, importe válido o estado de pago.">Incompleto · revisar</span> : isActive(record.data.status) ? "Activo" : "Cancelado"}</td><td style={styles.td}>{canCancelExpense && isActive(record.data.status) ? <button type="button" style={styles.secondary} disabled={saving} onClick={() => void handleCancelExpense(record)}>Cancelar</button> : "—"}</td></tr>)}
                   {!loadingData && visibleExpenses.length === 0 && <tr><td colSpan={9} style={{ ...styles.td, textAlign: "center", color: "#64748b" }}>No hay gastos para este filtro.</td></tr>}
                 </tbody></table></div>
               </>}
             </div>
           )}
+          {tab === "closings" && (
+            <div style={{ display: "grid", gap: 20, marginTop: 20 }}>
+              <div style={styles.notice}>
+                Primero abre una caja para iniciar el turno. Al finalizar, cuenta el efectivo y ciérrala. El sistema compara saldo inicial + ingresos − egresos en efectivo con el dinero contado. Transferencias, tarjeta y gastos pendientes no se suman al efectivo físico.
+              </div>
+              {cashClosingsWarning && <div role="alert" style={styles.error}>{cashClosingsWarning}</div>}
+              {cashMovementsMissingResponsible.length > 0 && activeCashRegister && <div role="alert" style={styles.error}>Hay {cashMovementsMissingResponsible.length} movimiento(s) en efectivo del período sin responsable identificado. El sistema bloqueará el cierre para evitar un saldo incorrecto.</div>}
+
+              {canCloseCash ? activeCashRegister ? (
+                <form style={{ ...styles.panel, background: "#f0fdf4", borderColor: "#bbf7d0" }} onSubmit={(event) => void handleCashClosingSubmit(event)}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: 20, color: "#166534" }}>Caja abierta · {textValue(activeCashRegister.data.shiftLabel, "Turno sin nombre")}</h2>
+                      <p style={styles.muted}>Responsable: <strong>{user.email}</strong> · Desde {dateLabel(activeCashRegister.data.openedAt ?? activeCashRegister.data.createdAt)}</p>
+                    </div>
+                    <span style={{ ...styles.tag, background: "#dcfce7", color: "#166534" }}>ABIERTA</span>
+                  </div>
+                  <div style={styles.grid}>
+                    <label style={styles.label}>Asociación
+                      <input style={styles.input} value={selectedAssociation?.name ?? "Selecciona una asociación"} readOnly />
+                    </label>
+                    <label style={styles.label}>Saldo inicial (L)
+                      <input style={styles.input} value={money(numberValue(activeCashRegister.data.openingBalance))} readOnly />
+                    </label>
+                  </div>
+                  <div style={{ ...styles.grid, marginTop: 16 }}>
+                    <div style={{ ...styles.panel, background: "#fff" }}><div style={styles.muted}>Ingresos en efectivo desde apertura</div><h2 style={{ margin: "8px 0 0", color: "#047857" }}>{money(closingCashIncome)}</h2><small>{cashMovementsInClosingPeriod.filter((record) => textValue(record.data.type).toUpperCase() === "INCOME").length} movimientos</small></div>
+                    <div style={{ ...styles.panel, background: "#fff" }}><div style={styles.muted}>Egresos en efectivo desde apertura</div><h2 style={{ margin: "8px 0 0", color: "#b91c1c" }}>{money(closingCashExpense)}</h2><small>{cashMovementsInClosingPeriod.filter((record) => textValue(record.data.type).toUpperCase() === "EXPENSE").length} movimientos</small></div>
+                    <div style={{ ...styles.panel, background: "#fff" }}><div style={styles.muted}>Efectivo esperado</div><h2 style={{ margin: "8px 0 0" }}>{money(numberValue(activeCashRegister.data.openingBalance) + closingCashIncome - closingCashExpense)}</h2><small>Saldo inicial + ingresos − egresos</small></div>
+                    <div style={{ ...styles.panel, background: "#fff" }}><div style={styles.muted}>Diferencia preliminar</div><h2 style={{ margin: "8px 0 0", color: countedCash.trim() === "" ? "#64748b" : closingDifference === 0 ? "#047857" : closingDifference > 0 ? "#b45309" : "#b91c1c" }}>{countedCash.trim() === "" ? "Pendiente de conteo" : money(closingDifference)}</h2><small>{countedCash.trim() === "" ? "Ingresa el efectivo contado" : closingDifference === 0 ? "Caja cuadrada" : closingDifference > 0 ? "Sobrante de efectivo" : "Faltante de efectivo"}</small></div>
+                  </div>
+                  <div style={{ ...styles.grid, marginTop: 16 }}>
+                    <label style={styles.label}>Efectivo contado físicamente (L)
+                      <input style={styles.input} required type="number" min="0" step="0.01" value={countedCash} onChange={(event) => setCountedCash(event.target.value)} placeholder="Cuenta el efectivo físico" />
+                    </label>
+                    <label style={styles.label}>Observaciones del cierre (opcional)
+                      <input style={styles.input} value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} placeholder="Explica una diferencia o deja una observación" maxLength={500} />
+                    </label>
+                  </div>
+                  {activeCashRegister.data.openingNotes ? <p style={styles.muted}>Notas de apertura: {textValue(activeCashRegister.data.openingNotes, "")}</p> : null}
+                  <div style={{ ...styles.row, justifyContent: "flex-end", marginTop: 16 }}>
+                    <button type="submit" style={styles.primary} disabled={saving || loadingData || associationId === ALL_ASSOCIATIONS || Boolean(cashClosingsWarning) || cashMovementsMissingResponsible.length > 0}>{saving ? "Cerrando caja…" : "Cerrar caja y guardar corte"}</button>
+                  </div>
+                </form>
+              ) : (
+                <form style={{ ...styles.panel, background: "#f8fafc" }} onSubmit={(event) => void handleCashRegisterOpenSubmit(event)}>
+                  <h2 style={{ marginTop: 0, fontSize: 20 }}>Abrir una caja nueva</h2>
+                  <p style={styles.muted}>Responsable: <strong>{user.email}</strong>. Cada vendedor solo puede tener una caja abierta a la vez. El saldo inicial sugerido viene del último cierre propio en esta asociación.</p>
+                  <div style={styles.grid}>
+                    <label style={styles.label}>Asociación
+                      <input style={styles.input} value={selectedAssociation?.name ?? "Selecciona una asociación"} readOnly />
+                    </label>
+                    <label style={styles.label}>Nombre de caja / turno
+                      <input style={styles.input} required value={closingShift} onChange={(event) => setClosingShift(event.target.value)} placeholder="Ej. Turno mañana, Caja 1" maxLength={60} />
+                    </label>
+                    <label style={styles.label}>Saldo inicial (L)
+                      <input style={styles.input} required type="number" min="0" step="0.01" value={openingBalance} onChange={(event) => setOpeningBalance(event.target.value)} />
+                    </label>
+                  </div>
+                  <label style={{ ...styles.label, marginTop: 16 }}>Notas de apertura (opcional)
+                    <input style={styles.input} value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} placeholder="Efectivo recibido, observaciones del turno…" maxLength={500} />
+                  </label>
+                  <div style={{ ...styles.row, justifyContent: "flex-end", marginTop: 16 }}>
+                    <button type="submit" style={styles.primary} disabled={saving || loadingData || associationId === ALL_ASSOCIATIONS || Boolean(cashClosingsWarning)}>{saving ? "Abriendo caja…" : "＋ Abrir caja"}</button>
+                  </div>
+                  {associationId === ALL_ASSOCIATIONS && <p style={styles.muted}>Selecciona una asociación concreta para abrir una caja.</p>}
+                </form>
+              ) : (
+                <div style={styles.notice}>Tu perfil no tiene permiso para abrir o cerrar una caja. Solicita acceso al administrador de tu asociación.</div>
+              )}
+
+              <section style={styles.panel}>
+                <div style={{ ...styles.row, justifyContent: "space-between", marginBottom: 12 }}>
+                  <div><h2 style={{ margin: 0, fontSize: 20 }}>Historial de cajas</h2><p style={styles.muted}>Las cajas abiertas aparecen aquí y se actualizan a cerradas al confirmar su corte. Los cierres históricos no se pueden editar ni eliminar.</p></div>
+                  <button type="button" style={styles.secondary} onClick={() => void loadData()} disabled={loadingData || saving}>Actualizar historial</button>
+                </div>
+                <div style={styles.tableWrap}><table style={styles.table}><thead><tr>
+                  {(associationId === ALL_ASSOCIATIONS ? ["Asociación", "Apertura / cierre", "Caja / turno", "Responsable", "Estado", "Esperado", "Contado", "Diferencia"] : ["Apertura / cierre", "Caja / turno", "Responsable", "Saldo inicial", "Ingresos efectivo", "Egresos efectivo", "Estado", "Esperado", "Contado", "Diferencia"]).map((heading) => <th key={heading} style={styles.th}>{heading}</th>)}
+                </tr></thead><tbody>
+                  {selectedCashClosings.map((record) => {
+                    const isClosed = textValue(record.data.status).toUpperCase() === "CLOSED";
+                    const eventAt = dateValue(isClosed ? (record.data.closedAt ?? record.data.periodEndAt) : (record.data.openedAt ?? record.data.createdAt));
+                    const difference = numberValue(record.data.difference);
+                    return <tr key={`${record.associationId}-${record.id}`}>
+                      {associationId === ALL_ASSOCIATIONS && <td style={styles.td}>{record.associationName}</td>}
+                      <td style={styles.td}>{eventAt ? eventAt.toLocaleString("es-HN", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
+                      <td style={styles.td}>{textValue(record.data.shiftLabel)}</td>
+                      <td style={styles.td}>{textValue(record.data.responsibleEmail ?? record.data.createdBy)}</td>
+                      {associationId !== ALL_ASSOCIATIONS && <>
+                        <td style={styles.td}>{money(numberValue(record.data.openingBalance))}</td>
+                        <td style={styles.td}>{isClosed ? money(numberValue(record.data.cashIncome)) : "—"}</td>
+                        <td style={styles.td}>{isClosed ? money(numberValue(record.data.cashExpense)) : "—"}</td>
+                      </>}
+                      <td style={styles.td}><span style={{ ...styles.tag, ...(isClosed ? { background: "#e2e8f0", color: "#334155" } : { background: "#dcfce7", color: "#166534" }) }}>{isClosed ? "Cerrada" : "Abierta"}</span></td>
+                      <td style={styles.td}>{isClosed ? money(numberValue(record.data.expectedCash)) : "—"}</td>
+                      <td style={styles.td}>{isClosed ? money(numberValue(record.data.countedCash)) : "—"}</td>
+                      <td style={{ ...styles.td, fontWeight: 750, color: difference === 0 ? "#047857" : difference > 0 ? "#b45309" : "#b91c1c" }}>{isClosed ? money(difference) : "—"}{record.data.closingNotes ? <div style={styles.muted}>{textValue(record.data.closingNotes, "")}</div> : null}</td>
+                    </tr>;
+                  })}
+                  {!loadingData && selectedCashClosings.length === 0 && <tr><td colSpan={associationId === ALL_ASSOCIATIONS ? 8 : 10} style={{ ...styles.td, textAlign: "center", color: "#64748b" }}>{cashClosingsWarning ? "El historial no está disponible hasta habilitar los permisos de Firestore." : "Todavía no hay cajas registradas."}</td></tr>}
+                </tbody></table></div>
+              </section>
+            </div>
+          )}
+
           {loadingData && <p style={styles.muted}>Consultando los registros…</p>}
         </section>
       </main>
