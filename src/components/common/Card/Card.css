@@ -1,0 +1,16 @@
+
+.app-card {
+    min-width: 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+  }
+  
+  .app-card__title {
+    margin: 0 0 16px;
+    color: #1f2937;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  

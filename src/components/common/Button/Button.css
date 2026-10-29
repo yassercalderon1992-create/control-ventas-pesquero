@@ -1,0 +1,55 @@
+
+.app-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+  }
+  
+  .app-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  
+  .app-button--primary {
+    color: #fff;
+    background: #1764c0;
+  }
+  
+  .app-button--secondary {
+    color: #1f2937;
+    background: #e5e7eb;
+  }
+  
+  .app-button--danger {
+    color: #fff;
+    background: #b91c1c;
+  }
+  
+  .app-button--ghost {
+    color: #1f2937;
+    background: transparent;
+    border-color: #d1d5db;
+  }
+  
+  .app-button--small {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .app-button--medium {
+    font-size: 14px;
+  }
+  
+  .app-button--large {
+    padding: 12px 20px;
+    font-size: 16px;
+  }
+  

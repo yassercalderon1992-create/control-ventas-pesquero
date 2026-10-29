@@ -1,195 +1,452 @@
-import { useEffect, useMemo, useState } from "react";
 
-import { useCategories } from "../Configuracion/Categories/useCategories";
-import { useSpecies } from "../Configuracion/Species/useSpecies";
-import { useUnits } from "../Configuracion/Units/useUnits";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
-export default function ProductForm() {
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
-  const { categories } = useCategories();
-  const { species } = useSpecies();
-  const { units } = useUnits();
+import { useAuth } from "../contexts/AuthContext";
+import { db } from "../firebase/firestore";
+import { productService } from "../services/inventory/productService";
+import { hasPermission } from "../models/permissions";
 
-  const [categoryId, setCategoryId] = useState("");
-  const [speciesId, setSpeciesId] = useState("");
+import type { Product } from "../types/product";
 
-  const [stock, setStock] = useState(0);
+interface AssociationOption {
+  id: string;
+  name: string;
+}
+
+interface ProductFormProps {
+  onSaved?: () => void | Promise<void>;
+}
+
+export default function ProductForm({
+  onSaved,
+}: ProductFormProps) {
+  const { user, loading: authLoading } = useAuth();
+
+  const [associations, setAssociations] = useState<
+    AssociationOption[]
+  >([]);
+
+  const [selectedAssociationId, setSelectedAssociationId] =
+    useState("");
+
+  const [loadingAssociations, setLoadingAssociations] =
+    useState(false);
+
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [unit, setUnit] = useState("lb");
   const [stockMinimo, setStockMinimo] = useState(10);
 
-  const [purchasePrice, setPurchasePrice] = useState(0);
-  const [salePrice, setSalePrice] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const filteredSpecies = useMemo(() => {
+  const associationId = user?.associationId?.trim() ?? "";
 
-    return species.filter(
-      s => s.categoryId === categoryId && s.active
-    );
+  const isAllAssociations =
+    associationId.toLowerCase() === "todas";
 
-  }, [species, categoryId]);
+  const canManageInventory =
+    user?.active === true &&
+    hasPermission(user.role, "inventory:manage");
 
-  const selectedSpecies = useMemo(() => {
-
-    return species.find(
-      s => s.id === speciesId
-    );
-
-  }, [speciesId, species]);
-
-  const selectedUnit = useMemo(() => {
-
-    if (!selectedSpecies) return null;
-
-    return units.find(
-      u => u.id === selectedSpecies.unitId
-    );
-
-  }, [selectedSpecies, units]);
-
+  /**
+   * Cargar las asociaciones disponibles para el
+   * administrador global.
+   */
   useEffect(() => {
+    let active = true;
 
-    setSpeciesId("");
+    async function loadAssociations() {
+      if (
+        authLoading ||
+        !user ||
+        user.active !== true ||
+        !isAllAssociations ||
+        !hasPermission(user.role, "inventory:manage")
+      ) {
+        setAssociations([]);
+        setLoadingAssociations(false);
+        return;
+      }
 
-  }, [categoryId]);
+      setLoadingAssociations(true);
 
-  function guardarProducto(){
+      try {
+        const snapshot = await getDocs(
+          collection(db, "associations")
+        );
 
-      console.log({
+        const options = snapshot.docs
+          .filter(
+            (document) =>
+              document.data().active !== false
+          )
+          .map((document) => {
+            const data = document.data();
 
-          categoryId,
-          speciesId,
+            return {
+              id: document.id,
+              name: String(
+                data.associationName ??
+                  data.name ??
+                  data.nombre ??
+                  document.id
+              ),
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
 
-          stock,
-          stockMinimo,
+        if (active) {
+          setAssociations(options);
 
-          purchasePrice,
-          salePrice
+          setSelectedAssociationId((current) => {
+            if (
+              current &&
+              options.some((item) => item.id === current)
+            ) {
+              return current;
+            }
 
-      });
+            return options[0]?.id ?? "";
+          });
+        }
+      } catch (err: unknown) {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "No se pudieron consultar las asociaciones."
+          );
+        }
+      } finally {
+        if (active) {
+          setLoadingAssociations(false);
+        }
+      }
+    }
 
+    void loadAssociations();
+
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user, isAllAssociations]);
+
+  /**
+   * Crear el producto con stock inicial cero.
+   * El catálogo se recarga una vez guardado.
+   */
+  async function guardarProducto(
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> {
+    event.preventDefault();
+
+    setError("");
+    setSuccess("");
+
+    if (!user) {
+      setError(
+        "Debes iniciar sesión antes de guardar productos."
+      );
+      return;
+    }
+
+    if (user.active !== true) {
+      setError(
+        "Tu usuario está inactivo. Contacta al administrador."
+      );
+      return;
+    }
+
+    if (!canManageInventory) {
+      setError(
+        "No tienes permiso para administrar productos."
+      );
+      return;
+    }
+
+    const targetAssociationId = isAllAssociations
+      ? selectedAssociationId.trim()
+      : associationId;
+
+    if (!targetAssociationId) {
+      setError("Debes seleccionar una asociación válida.");
+      return;
+    }
+
+    if (
+      isAllAssociations &&
+      !associations.some(
+        (association) => association.id === targetAssociationId
+      )
+    ) {
+      setError(
+        "La asociación seleccionada no está disponible. Actualiza la página e inténtalo nuevamente."
+      );
+      return;
+    }
+
+    const targetAssociationName = isAllAssociations
+      ? associations.find(
+          (item) => item.id === targetAssociationId
+        )?.name ?? ""
+      : user.associationName;
+
+    if (!targetAssociationName?.trim()) {
+      setError(
+        "No se encontró el nombre de la asociación seleccionada."
+      );
+      return;
+    }
+
+    if (
+      !code.trim() ||
+      !name.trim() ||
+      !category.trim() ||
+      !unit.trim()
+    ) {
+      setError(
+        "Completa el código, nombre, categoría y unidad del producto."
+      );
+      return;
+    }
+
+    if (
+      !Number.isFinite(stockMinimo) ||
+      stockMinimo < 0
+    ) {
+      setError(
+        "El stock mínimo debe ser un número igual o mayor que cero."
+      );
+      return;
+    }
+
+    const product: Product = {
+      code: code.trim(),
+      name: name.trim(),
+      category: category.trim(),
+      unit: unit.trim(),
+      stock: 0,
+      stockMinimo,
+      purchaseCostLb: 0,
+      associationId: targetAssociationId,
+      associationName: targetAssociationName.trim(),
+      active: true,
+    };
+
+    setSaving(true);
+
+    try {
+      await productService.createProduct(product);
+
+      setSuccess(
+        "Producto creado correctamente con existencias iniciales en cero."
+      );
+
+      setCode("");
+      setName("");
+      setCategory("");
+      setUnit("lb");
+      setStockMinimo(10);
+
+      // Actualizar el catálogo sin recargar toda la página.
+      await onSaved?.();
+    } catch (err: unknown) {
+      console.error("Error al guardar el producto:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo guardar el producto."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="product-form">
+        <p>Comprobando sesión...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="product-form">
+        <h2>Nuevo producto</h2>
+        <p>
+          Debes iniciar sesión para registrar productos.
+        </p>
+      </div>
+    );
+  }
+
+  if (user.active !== true) {
+    return (
+      <div className="product-form">
+        <h2>Administración de productos</h2>
+        <p>
+          Tu usuario está inactivo. Contacta al administrador.
+        </p>
+      </div>
+    );
+  }
+
+  if (!canManageInventory) {
+    return (
+      <div className="product-form">
+        <h2>Administración de productos</h2>
+        <p>
+          Tu rol no permite crear ni administrar productos.
+          Contacta al administrador si necesitas acceso.
+        </p>
+      </div>
+    );
   }
 
   return (
+    <form
+      className="product-form"
+      onSubmit={guardarProducto}
+    >
+      <h2>Nuevo producto</h2>
 
-    <div className="product-form">
+      {isAllAssociations && (
+        <>
+          <label htmlFor="product-association">
+            Asociación
+          </label>
 
-      <h2>Nuevo Producto</h2>
-
-      <label>Categoría</label>
-
-      <select
-        value={categoryId}
-        onChange={(e)=>setCategoryId(e.target.value)}
-      >
-
-        <option value="">Seleccione...</option>
-
-        {categories.map(cat=>(
-
-            <option
-              key={cat.id}
-              value={cat.id}
-            >
-
-              {cat.name}
-
+          <select
+            id="product-association"
+            value={selectedAssociationId}
+            onChange={(event) =>
+              setSelectedAssociationId(event.target.value)
+            }
+            disabled={loadingAssociations || saving}
+            required
+          >
+            <option value="">
+              {loadingAssociations
+                ? "Cargando asociaciones..."
+                : "Seleccione una asociación"}
             </option>
 
-        ))}
+            {associations.map((association) => (
+              <option
+                key={association.id}
+                value={association.id}
+              >
+                {association.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
-      </select>
-
-      <label>Especie</label>
-
-      <select
-        value={speciesId}
-        onChange={(e)=>setSpeciesId(e.target.value)}
-      >
-
-        <option value="">Seleccione...</option>
-
-        {filteredSpecies.map(sp=>(
-
-            <option
-              key={sp.id}
-              value={sp.id}
-            >
-
-              {sp.name}
-
-            </option>
-
-        ))}
-
-      </select>
-
-      <label>Unidad</label>
-
+      <label htmlFor="product-code">
+        Código del producto
+      </label>
       <input
-
-        value={selectedUnit?.name || ""}
-
-        disabled
-
+        id="product-code"
+        value={code}
+        onChange={(event) => setCode(event.target.value)}
+        maxLength={60}
+        required
       />
 
-      <label>Stock</label>
-
+      <label htmlFor="product-name">
+        Nombre del producto
+      </label>
       <input
-
-        type="number"
-
-        value={stock}
-
-        onChange={(e)=>setStock(Number(e.target.value))}
-
+        id="product-name"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        maxLength={150}
+        required
       />
 
-      <label>Stock mínimo</label>
-
+      <label htmlFor="product-category">
+        Categoría
+      </label>
       <input
+        id="product-category"
+        value={category}
+        onChange={(event) =>
+          setCategory(event.target.value)
+        }
+        placeholder="Ej. Pescado"
+        maxLength={100}
+        required
+      />
 
+      <label htmlFor="product-unit">
+        Unidad de medida
+      </label>
+      <input
+        id="product-unit"
+        value={unit}
+        onChange={(event) => setUnit(event.target.value)}
+        placeholder="Ej. lb, kg, unidad"
+        maxLength={30}
+        required
+      />
+
+      <label htmlFor="product-minimum-stock">
+        Stock mínimo
+      </label>
+      <input
+        id="product-minimum-stock"
         type="number"
-
+        min="0"
+        step="any"
         value={stockMinimo}
-
-        onChange={(e)=>setStockMinimo(Number(e.target.value))}
-
+        onChange={(event) =>
+          setStockMinimo(Number(event.target.value))
+        }
+        required
       />
 
-      <label>Precio Compra</label>
+      <p>
+        El producto se creará con existencias en cero.
+        Las entradas y los costos se registrarán mediante
+        las operaciones de inventario correspondientes.
+      </p>
 
-      <input
+      {error && (
+        <p role="alert" style={{ color: "red" }}>
+          {error}
+        </p>
+      )}
 
-        type="number"
+      {success && (
+        <p role="status" style={{ color: "green" }}>
+          {success}
+        </p>
+      )}
 
-        value={purchasePrice}
-
-        onChange={(e)=>setPurchasePrice(Number(e.target.value))}
-
-      />
-
-      <label>Precio Venta</label>
-
-      <input
-
-        type="number"
-
-        value={salePrice}
-
-        onChange={(e)=>setSalePrice(Number(e.target.value))}
-
-      />
-
-      <br />
-
-      <button onClick={guardarProducto}>
-
-        Guardar Producto
-
+      <button
+        type="submit"
+        disabled={
+          saving ||
+          loadingAssociations ||
+          (isAllAssociations &&
+            (!selectedAssociationId ||
+              associations.length === 0))
+        }
+      >
+        {saving ? "Guardando..." : "Guardar producto"}
       </button>
-
-    </div>
-
+    </form>
   );
-
 }

@@ -1,23 +1,14 @@
-import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
 
-import { auth } from "../firebase/auth";
+import { useAuthContext } from "../contexts/AuthContext";
 
 export function useAuth() {
-  const [loading, setLoading] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthenticated(!!user);
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
+  const context = useAuthContext();
 
   return {
-    authenticated,
-    loading,
+    ...context,
+
+    // Compatibilidad con AppRoutes.tsx,
+    // que utiliza la propiedad "authenticated".
+    authenticated: context.isAuthenticated,
   };
 }

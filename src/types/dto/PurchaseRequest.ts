@@ -1,11 +1,10 @@
-import { PurchaseItem } from "./PurchaseItem";
+
+import type { PurchaseItem } from "./PurchaseItem";
 
 export interface PurchaseRequest {
-
   associationId: string;
 
   supplier?: string;
-
   invoiceNumber?: string;
 
   paymentMethod: "CASH" | "TRANSFER" | "CARD" | "CREDIT";
@@ -15,5 +14,4 @@ export interface PurchaseRequest {
   items: PurchaseItem[];
 
   createdBy: string;
-
 }

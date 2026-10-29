@@ -1,7 +1,7 @@
-import { SaleItem } from "./SaleItem";
+
+import type { SaleItem } from "./SaleItem";
 
 export interface SaleRequest {
-
   associationId: string;
 
   customer?: string;
@@ -13,5 +13,4 @@ export interface SaleRequest {
   items: SaleItem[];
 
   createdBy: string;
-
 }
